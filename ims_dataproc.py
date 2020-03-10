@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt     # Plot operation
 import time                         # Time
 from datetime import timedelta      # Time formatting
 #import scipy.io                # Matlab file handling
+from scipy.optimize import curve_fit    # Curve fitting
 
 ### Global Variable ###
 buf2 = np.empty([1, 8])
@@ -21,9 +22,9 @@ buf1 = np.array([])
 def getData(filename):
     print("Processing " + filename)
     filearr = np.genfromtxt(filename, delimiter="\t", dtype='float')
-    for idx in range(0,filearr.shape[1]):
-        print("--------------------- idx: " + str(idx))
-        get_best_distribution(filearr[idx,:])
+    #for idx in range(0,filearr.shape[1]):
+        #print("--------------------- idx: " + str(idx))
+        #get_best_distribution(filearr[idx,:])
     data = getStats(filearr)
     return data
 
@@ -37,7 +38,7 @@ def savePlot(data, testnum):
         plt.plot(range(1, data.shape[0]+1), data[:, col], color=palette(col), label='ch'+str(col+1))
         if (i % chnum == 0):
             plt.legend(loc=2, ncol=1)
-            plt.savefig('result/' + 'ent_' + testnum + '_ch' + str(i//chnum) + '.png')
+            plt.savefig('result/' + 'var_' + testnum + '_ch' + str(i//chnum) + '.png')
             plt.clf()
         i += 1
         
@@ -54,17 +55,17 @@ def fileTraversal():
             buf = getData(path+"/"+testnum+"/"+filename).reshape(1, dim)
             featuredata = np.append(featuredata, buf, axis=0)
         savePlot(featuredata,testnum)
-        np.savetxt('result/' + 'ent_' + testnum + '.txt', featuredata, delimiter=',', fmt='%.5f')
+        np.savetxt('result/' + 'var_' + testnum + '.txt', featuredata, delimiter=',', fmt='%.5f')
         print('Processed ' + str(featuredata.shape[0]) + ' files in ' + str(timedelta(seconds=time.time()-dstime)))
     print('--- Time completed: ' + str(timedelta(seconds=time.time()-start)))
 
 ### Statistical Extraction ###
 def getStats(mat):
-    k = getKurtosis(mat)
+    #k = getKurtosis(mat)
     #s = getSkewness(mat)
-    #v = getVariance(mat)
+    v = getVariance(mat)
     #e = getEntropy(mat)
-    return k
+    return v
 
 # Kurtosis
 def getKurtosis(mat):
@@ -87,7 +88,7 @@ def getVariance(mat):
     var = np.array([])
     for idx in range(0, mat.shape[1]):
         v = np.var(mat[idx, :])
-        skew = np.append(var, v, axis=0)
+        var = np.append(var, np.array([v]), axis=0)
     return var
 
 # Entropy
@@ -124,5 +125,63 @@ def get_best_distribution(data):
 
     return best_dist, best_p, params[best_dist]
 
-### Loop ###
-fileTraversal()
+# Retrieve data from file
+def getDataFile(filename):
+    filearr = np.genfromtxt(filename, delimiter=",", dtype='float')
+    return filearr
+
+# Exponential function
+def curve_func(x,a,b,c,d,e,f,g,h):
+    #return a*(np.exp(x*b)**2) + c*(np.exp(x*b)) + d
+    #return a*(np.exp(x*b)) + c
+    return a*(x**7) + b*(x**6) + c*(x**5) + d*(x**4) + e*(x**3) + f*(x**2) + g*x + h
+
+# Plot data from file
+def plotDataFitting(data):
+    n = data.shape[0]
+    order = 5
+    #print(n)
+    plt.style.use('seaborn-darkgrid')
+    palette = plt.get_cmap('Set1')
+    chnum = data.shape[1]//8
+    i = 1
+    xdata = np.linspace(1, data.shape[0]+1, n)
+    for col in range(0, data.shape[1]):
+        print("Processing column " + str(col) + "...")
+        #print(data[:,col].shape)
+        #print(range(1,data[:,col].shape[0]))
+        #p = np.poly1d(np.polyfit(xdata,data[:,col],order))
+        popt_exp, pcov_exp = curve_fit(curve_func, xdata, data[:,col], p0=[1, 3, 2, 4, 1, 5, 4, 3], maxfev=1500)
+        print(popt_exp)
+        plt.plot(xdata, data[:,col], '.', color="black", label='ch'+str(col+1))
+        #plt.plot(xdata, p(xdata), '-', color=palette(col), label='ch'+str(col+1))
+        plt.plot(xdata, curve_func(xdata,*popt_exp))
+        plt.ylim(0,0.15)
+        # xdata, data[:, col], '.', 
+        if (i % chnum == 0):
+            plt.legend(loc=2, ncol=1)
+            #plt.savefig('result/' + 'datafit_ch' + str(i//chnum) + '_ord' + str(order) + '.png',dpi=1500)
+            plt.show()
+            plt.clf()
+        i += 1
+
+# Curve fitting (scipy.optimize)
+def getCurveFitting(data):
+    data_fitted = np.array([]).reshape(0,1)
+    xdata = np.linspace(1, data.shape[0], data.shape[0])
+    print(xdata)
+    print(data)
+    for column in range(0, data.shape[1]):
+        #p = np.poly1d(np.polyfit(xdata,data[:,column],3))
+        popt_exp, pcov_exp = scipy.optimize.curve_fit(exponential, xdata, data[:,column], p0=[1,-0.5, 1])
+        print(popt_exp)
+        #data_fitted = np.append(data_fitted, np.array([p(0),p(1),p(2),p(3)]).reshape(1,4), axis=0)
+        data_fitted = np.append(data_fitted, np.array(popt_exp), axis=0)
+        print(data_fitted)
+    return data_fitted
+
+### Main ###
+#fileTraversal()
+#print(getDataFile('result/var_1st_test.txt'))
+#plotData(getDataFile('result/var_1st_test.txt'))
+plotDataFitting(getDataFile('result/var_1st_test.txt'))
