@@ -2,7 +2,7 @@ import keras
 print(keras.__version__)
 import tensorflow as tf
 print(tf.__version__)
-tf.config.list_physical_devices()
+print(tf.config.list_physical_devices('GPU'))
 from keras.datasets import mnist
 from keras.models import Sequential
 from keras.layers import Dense
@@ -56,7 +56,7 @@ h = model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=10, bat
 scores = model.evaluate(X_test, y_test, verbose=0)
 print("Baseline Error: %.2f%%" % (100-scores[1]*100))
 
-print(h.history.keys())
+''' print(h.history.keys())
 accuracy = h.history['acc']
 val_accuracy = h.history['val_acc']
 loss = h.history['loss']
@@ -72,7 +72,7 @@ plt.plot(epochs, loss, 'blue', label='Training loss')
 plt.plot(epochs, val_loss, 'orange', label='Validation loss')
 plt.title('Training and validation loss')
 plt.legend()
-plt.show()
+plt.show() '''
 
 
 import scipy

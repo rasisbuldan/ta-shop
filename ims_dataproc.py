@@ -2,17 +2,21 @@
 # 1. Convert filename to date
 # 2. Entropy calculate probability distribution values
 
-
 ### Library ###
-import numpy as np                  # Array and matrix operation
-import os                           # File operation
-import scipy.stats as stats         # Statistical library
-from io import StringIO             # String handling
-import matplotlib.pyplot as plt     # Plot operation
-import time                         # Time
-from datetime import timedelta      # Time formatting
-#import scipy.io                # Matlab file handling
+import time                             # Time
+from datetime import timedelta          # Time formatting
+import numpy as np                      # Array and matrix operation
+import os                               # File operation
+import scipy.stats as stats             # Statistical library
+from io import StringIO                 # String handling
+import matplotlib.pyplot as plt         # Plot operation
+#import scipy.io                        # Matlab file handling
 from scipy.optimize import curve_fit    # Curve fitting
+
+# LSTM Implementation
+import tensorflow as tf
+import keras
+
 
 ### Global Variable ###
 buf2 = np.empty([1, 8])
@@ -45,7 +49,7 @@ def savePlot(data, testnum):
 ### File traversal ###
 def fileTraversal():
     start = time.time()
-    path = 'C:/Users/Stoorm/Desktop/IMS/data'
+    path = 'C:/Users/rss75/Desktop/IMS Dataset/data'
     i = 0
     for testnum in os.listdir(path):
         dim = getData(path + '/' + testnum + '/' + os.listdir(path+"/"+testnum+"/")[0]).shape[0]
@@ -55,17 +59,18 @@ def fileTraversal():
             buf = getData(path+"/"+testnum+"/"+filename).reshape(1, dim)
             featuredata = np.append(featuredata, buf, axis=0)
         savePlot(featuredata,testnum)
-        np.savetxt('result/' + 'var_' + testnum + '.txt', featuredata, delimiter=',', fmt='%.5f')
+        np.savetxt('result/' + 'skew_' + testnum + '.txt', featuredata, delimiter=',', fmt='%.5f')
         print('Processed ' + str(featuredata.shape[0]) + ' files in ' + str(timedelta(seconds=time.time()-dstime)))
     print('--- Time completed: ' + str(timedelta(seconds=time.time()-start)))
 
 ### Statistical Extraction ###
 def getStats(mat):
     #k = getKurtosis(mat)
-    #s = getSkewness(mat)
-    v = getVariance(mat)
+    s = getSkewness(mat)
+    #v = getVariance(mat)
     #e = getEntropy(mat)
-    return v
+    #m = getMean(mat)
+    return s
 
 # Kurtosis
 def getKurtosis(mat):
@@ -74,6 +79,14 @@ def getKurtosis(mat):
         k = stats.kurtosis(mat[idx, :], fisher=False)
         kur = np.append(kur, np.array([k]), axis=0)
     return kur
+
+# Mean
+def getMean(mat):
+    mean = np.array([])
+    for idx in range(0, mat.shape[1]):
+        m = stats.trim_mean(mat[idx, :],0.05)
+        mean = np.append(mean, np.array([m]), axis=0)
+    return mean
 
 # Skewness
 def getSkewness(mat):
@@ -97,7 +110,6 @@ def getEntropy(mat):
     for idx in range(0, mat.shape[1]):
         e = stats.entropy(mat[idx, :])
         ent = np.append(ent, np.array([e]), axis=0)
-    print(ent)
     return ent
 
 ### Get Probability Distribution ###
@@ -136,8 +148,42 @@ def curve_func(x,a,b,c,d,e,f,g,h):
     #return a*(np.exp(x*b)) + c
     return a*(x**7) + b*(x**6) + c*(x**5) + d*(x**4) + e*(x**3) + f*(x**2) + g*x + h
 
+def curve_func2(x,a,b,c):
+    #return a*(np.exp(x*b)**2) + c*(np.exp(x*b)) + d
+    return a*(np.exp(x*b)) + c
+    #return a*(x**3) + b*(x**2) + c*(x**1) + d
+
 # Plot data from file
 def plotDataFitting(data):
+    n = data.shape[0]
+    order = 5
+    #print(n)
+    plt.style.use('seaborn-darkgrid')
+    palette = plt.get_cmap('Set1')
+    chnum = data.shape[1]//4
+    i = 1
+    xdata = np.linspace(1, data.shape[0]+1, n)
+    for col in range(0, data.shape[1]):
+        print("Processing column " + str(col) + "...")
+        #print(data[:,col].shape)
+        #print(range(1,data[:,col].shape[0]))
+        #p = np.poly1d(np.polyfit(xdata,data[:,col],order))
+        popt_exp, pcov_exp = curve_fit(curve_func, xdata, data[:,col], p0=[10, -10, 10, 3, 6, 4, 2, 3], maxfev=300)
+        print(popt_exp)
+        plt.plot(xdata, data[:,col], '.', color="black", label='ch'+str(col+1))
+        #plt.plot(xdata, p(xdata), '-', color=palette(col), label='ch'+str(col+1))
+        plt.plot(xdata, curve_func(xdata,*popt_exp))
+        plt.ylim(min(data[:,col])-0.15*(max(data[:,col])-min(data[:,col])),max(data[:,col])+0.4*(max(data[:,col])-min(data[:,col])))
+        # xdata, data[:, col], '.', 
+        if (i % chnum == 0):
+            plt.legend(loc=2, ncol=1)
+            #plt.savefig('result/' + 'datafit_ch' + str(i//chnum) + '_ord' + str(order) + '.png',dpi=1500)
+            plt.show()
+            plt.clf()
+        i += 1
+
+# Plot data from file (cumulative sum of all channel)
+def plotDataFittingCumulative(data):
     n = data.shape[0]
     order = 5
     #print(n)
@@ -146,24 +192,29 @@ def plotDataFitting(data):
     chnum = data.shape[1]//8
     i = 1
     xdata = np.linspace(1, data.shape[0]+1, n)
+    ycuml = np.zeros(data.shape[0])
     for col in range(0, data.shape[1]):
         print("Processing column " + str(col) + "...")
         #print(data[:,col].shape)
         #print(range(1,data[:,col].shape[0]))
         #p = np.poly1d(np.polyfit(xdata,data[:,col],order))
-        popt_exp, pcov_exp = curve_fit(curve_func, xdata, data[:,col], p0=[1, 3, 2, 4, 1, 5, 4, 3], maxfev=1500)
-        print(popt_exp)
-        plt.plot(xdata, data[:,col], '.', color="black", label='ch'+str(col+1))
-        #plt.plot(xdata, p(xdata), '-', color=palette(col), label='ch'+str(col+1))
-        plt.plot(xdata, curve_func(xdata,*popt_exp))
-        plt.ylim(0,0.15)
-        # xdata, data[:, col], '.', 
-        if (i % chnum == 0):
-            plt.legend(loc=2, ncol=1)
-            #plt.savefig('result/' + 'datafit_ch' + str(i//chnum) + '_ord' + str(order) + '.png',dpi=1500)
-            plt.show()
-            plt.clf()
-        i += 1
+        popt_exp, pcov_exp = curve_fit(curve_func, xdata, data[:,col], p0=[0.0001, -10, 10, 3, 7, 2, 3, 1], maxfev=200)
+        #popt_exp, pcov_exp = curve_fit(curve_func2, xdata, data[:,col], p0=[5, 0.3, 10], maxfev=1500)
+        for i in range(data.shape[0]):
+            ycuml[i] += curve_func(xdata[i],*popt_exp)
+            #ycuml[i] += curve_func2(xdata[i],*popt_exp)
+    #plt.plot(xdata, data[:,col], '.', color="black", label='ch'+str(col+1))
+    #plt.plot(xdata, p(xdata), '-', color=palette(col), label='ch'+str(col+1))
+    plt.title('Variance data trend over time (cumulative)')
+    plt.xlabel('Time step')
+    plt.ylabel('Variance')
+    plt.plot(xdata, ycuml)
+    plt.ylim(min(ycuml)-0.15*(max(ycuml)-min(ycuml)),max(ycuml)+0.4*(max(ycuml)-min(ycuml)))
+    # xdata, data[:, col], '.', 
+    
+    #plt.show()
+    plt.savefig('result/var_1st_plot_noscat.png',dpi=1500)
+    plt.clf()
 
 # Curve fitting (scipy.optimize)
 def getCurveFitting(data):
@@ -180,8 +231,11 @@ def getCurveFitting(data):
         print(data_fitted)
     return data_fitted
 
+# Long Short Term Memory Neural-Networks
+
 ### Main ###
-#fileTraversal()
+fileTraversal()
 #print(getDataFile('result/var_1st_test.txt'))
 #plotData(getDataFile('result/var_1st_test.txt'))
-plotDataFitting(getDataFile('result/var_1st_test.txt'))
+#plotDataFittingCumulative(getDataFile('result/var_1st_test.txt'))
+#plotDataFitting(getDataFile('result/kurt_2nd_test.txt'))
