@@ -4,7 +4,7 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.wrappers.scikit_learn import KerasClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
@@ -16,7 +16,7 @@ def getDataFile(filename):
     filearr = np.genfromtxt(filename, delimiter=",", dtype='float')
     return filearr
 
-# load dataset
+# Load dataset
 var1 = getDataFile('result/var_1st_test.txt')
 kur1 = getDataFile('result/kurt_1st_test.txt')
 mean1 = getDataFile('result/mean_1st_test.txt')
@@ -41,10 +41,10 @@ n3 = var3.shape[0]
 
 # Preprocessing for specific test
 buf = np.array([]).reshape(n1,0)
-buf = np.append(buf, var1[:,0:4], axis=1)
-buf = np.append(buf, kur1[:,0:4], axis=1)
-buf = np.append(buf, mean1[:,0:4], axis=1)
-buf = np.append(buf, skew1[:,0:4], axis=1)
+buf = np.append(buf, var1[:,0:8], axis=1)
+buf = np.append(buf, kur1[:,0:8], axis=1)
+buf = np.append(buf, mean1[:,0:8], axis=1)
+buf = np.append(buf, skew1[:,0:8], axis=1)
 z = np.zeros((n1_0,1), dtype=int)
 o = np.ones((n1_1,1), dtype=int)
 zo = np.append(z,o,axis=0)
@@ -56,31 +56,24 @@ print(ch1.shape)
 # Separate to Input | Output
 X = ch1[:,0:16].astype(float)
 Y = ch1[:,16]
-print(Y)
+
+# Splitting train and test data
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=69)
 
 print('Estimating...')
 # Creating neural network
 model = Sequential([
-    keras.layers.Dense(16, input_dim=16, activation='relu'),
+    keras.layers.Dense(32, input_dim=32, activation='relu'),
     keras.layers.Dense(16, activation='relu'),
+    keras.layers.Dense(8, activation='relu'),
     keras.layers.Dense(1, activation='sigmoid')
 ])
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
 # Train
-model.fit(X, Y, epochs=30)
-test_loss, test_acc = model.evaluate(X,  Y, verbose=2)
+model.fit(x_train, y_train, epochs=300)
+test_loss, test_acc = model.evaluate(x_test,  y_test, verbose=2)
 print('\nTest accuracy: {0:.3f} %'.format(float(test_acc*100)))
-
-# Extract test data
-test_data = [0,0,0,0,0,0,0,0,0,0]
-ndata = [int(0.1*n2), int(0.2*n2), int(0.3*n2), int(0.4*n2), int(0.5*n2), int(0.6*n2), int(0.7*n2), int(0.8*n2), int(0.9*n2), int(n2-1)]
-buf = np.array([]).reshape(n1,0)
-buf = np.append(buf, var1[:,0:4], axis=1)
-buf = np.append(buf, kur1[:,0:4], axis=1)
-buf = np.append(buf, mean1[:,0:4], axis=1)
-buf = np.append(buf, skew1[:,0:4], axis=1)
-print(buf.shape)
 
 # Testing classifier model
 probability_model = Sequential([model])
