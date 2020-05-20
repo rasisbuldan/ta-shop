@@ -8,6 +8,7 @@ REG_PWR_MGMT_1      = 0x6B
 REG_ACCEL_XOUT_H    = 0x3B
 REG_ACCEL_YOUT_H    = 0x3D
 REG_ACCEL_ZOUT_H    = 0x3F
+REG_TEMP_OUT_H      = 0x41
 REG_ACCEL_CONFIG    = 0x1C
 REG_SMPLRT_DIV      = 0x19
 REG_CONFIG          = 0x1A
@@ -42,8 +43,6 @@ SMPLRT_VAL = {
 }
 
 class MPU6050:
-    self.bus = 0
-
     def __init__(self, g_range, sample_rate, accel_ms=1, temp_ms=1):
         '''
         Initialization
@@ -53,7 +52,7 @@ class MPU6050:
         - accel_ms (0/1) : acceleration measurement
         - temp_ms (0/1)  : temperature measurement
         '''
-        
+
         # Open I2C bus
         try:
             self.bus = smbus.SMBus(1)
@@ -71,7 +70,7 @@ class MPU6050:
         # Internal private register config
         self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_CONFIG, 0x00)
 
-        
+
         # Sample rate divisor
         if sample_rate in SMPLRT_VAL:
             self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_SMPLRT_DIV, SMPLRT_VAL[sample_rate])
@@ -82,46 +81,46 @@ class MPU6050:
             else:
                 raise ValueError('Sample rate input out of range')
 
-        
+
         # Internal FIFO configuration
         self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_USER_CTRL, 0x44)
 
-        
+
         # Data to be inserted to FIFO
         # Accelerometer or temperature data, or both
-        self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_FIFO_EN, hex(accel_ms*(0x08) + temp_ms*(0x80)))
+        self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_FIFO_EN, 0x88)
 
 
         # Set data ready interrupt register
         self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_INT_ENABLE, 0x01)
 
-    
+
     def read_raw_data(self, reg_addr):
         # 16-bit data (accelerometer and gyro)
         val_h = self.bus.read_byte_data(MPU6050_I2C_ADDR, reg_addr)
         val_l = self.bus.read_byte_data(MPU6050_I2C_ADDR, reg_addr+1)
-        
+
         val = ((val_h << 8) | val_l)
-        
+
         # Convert to signed value
         if val > 32768:
             val = val - 65536
-        
+
         return val
 
 
     def fifo_count(self):
         fc_h = self.bus.read_byte_data(MPU6050_I2C_ADDR, REG_FIFO_COUNT_H)
         fc_l = self.bus.read_byte_data(MPU6050_I2C_ADDR, REG_FIFO_COUNT_L)
-        
+
         fc = ((fc_h << 8) | fc_l)
 
-        return fifo_count
+        return fc
 
 
     def get_data(self):
         # Store start time (in nanoseconds)
-        time_start = time.clock_gettime_ns()
+        time_start = time.clock_gettime_ns(time.CLOCK_REALTIME)
         time_prev  = time_start
 
         # Infinite loop
@@ -130,20 +129,21 @@ class MPU6050:
             if self.fifo_count() == 1024:
                 # Reset FIFO
                 self.bus.write_byte_data(MPU6050_I2C_ADDR, REG_USER_CTRL, 0x44)
-            
+
             else:
                 # Measure acceleration
                 accel_x = self.read_raw_data(REG_ACCEL_XOUT_H) / self.ACCEL_DIV
                 accel_y = self.read_raw_data(REG_ACCEL_YOUT_H) / self.ACCEL_DIV
                 accel_z = self.read_raw_data(REG_ACCEL_ZOUT_H) / self.ACCEL_DIV
+                # temp = self.read_raw_data(REG_TEMP_OUT_H) / -100
 
                 # Measure time period
-                time_delta = time.clock_gettime_ns() - time_prev
-                time_prev = time.clock_gettime_ns()
+                time_delta = time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev
+                time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
 
-                print('time: {}ms | x: {}g | y: {}g | z: {}g'.format(
-                      time_delta * 1000000, accel_x, accel_y, accel_z))
+                print('time: {}ms \t x: {}g \t y: {}g \t z: {}g'.format(
+                      time_delta / 1000000, accel_x, accel_y, accel_z))
 
 if __name__ == '__main__':
-    mpu = MPU6050(g_range='2g', sample_rate=1000)
+    mpu = MPU6050(g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
     mpu.get_data()
