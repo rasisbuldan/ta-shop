@@ -1,0 +1,2 @@
+mpu6050 i2c: 0x68
+registers map: https://www.i2cdevlib.com/devices/mpu6050#registers
