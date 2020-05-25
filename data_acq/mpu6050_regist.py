@@ -1,22 +1,6 @@
 import smbus
 import time
 
-# MPU6050 registers address
-REG_PWR_MGMT_1      = 0x6B
-REG_ACCEL_XOUT_H    = 0x3B
-REG_ACCEL_YOUT_H    = 0x3D
-REG_ACCEL_ZOUT_H    = 0x3F
-REG_TEMP_OUT_H      = 0x41
-REG_ACCEL_CONFIG    = 0x1C
-REG_SMPLRT_DIV      = 0x19
-REG_CONFIG          = 0x1A
-REG_FIFO_EN         = 0x23
-REG_USER_CTRL       = 0x6A
-REG_FIFO_COUNT_H    = 0x72
-REG_FIFO_COUNT_L    = 0x73
-REG_FIFO            = 0x74
-REG_WHO_AM_I        = 0x75
-REG_INT_ENABLE      = 0x38
 
 # Measurement range dictionary (register value, MSB count)
 RANGE_VAL = {
@@ -41,6 +25,23 @@ SMPLRT_VAL = {
 }
 
 class MPU6050:
+    # MPU6050 registers address
+    __REG_PWR_MGMT_1      = 0x6B
+    __REG_ACCEL_XOUT_H    = 0x3B
+    __REG_ACCEL_YOUT_H    = 0x3D
+    __REG_ACCEL_ZOUT_H    = 0x3F
+    __REG_TEMP_OUT_H      = 0x41
+    __REG_ACCEL_CONFIG    = 0x1C
+    __REG_SMPLRT_DIV      = 0x19
+    __REG_CONFIG          = 0x1A
+    __REG_FIFO_EN         = 0x23
+    __REG_USER_CTRL       = 0x6A
+    __REG_FIFO_COUNT_H    = 0x72
+    __REG_FIFO_COUNT_L    = 0x73
+    __REG_FIFO            = 0x74
+    __REG_WHO_AM_I        = 0x75
+    __REG_INT_ENABLE      = 0x38
+
     def __init__(self, i2c_addr, g_range, sample_rate, verbose=False, accel_ms=1, temp_ms=1):
         '''
         Initialization
@@ -64,34 +65,34 @@ class MPU6050:
         self.verbose = verbose
         
         # Power management (ensure chip not in sleep mode, activate temperature measurement)
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_PWR_MGMT_1, 0x01)
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_PWR_MGMT_1, 0x01)
         
         # Accelerometer range configuration
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_ACCEL_CONFIG, RANGE_VAL[g_range][0])
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_ACCEL_CONFIG, RANGE_VAL[g_range][0])
         self.ACCEL_DIV = float(RANGE_VAL[g_range][1])
 
         # Internal private register config
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_CONFIG, 0x00)
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_CONFIG, 0x00)
 
         # Sample rate divisor
         if sample_rate in SMPLRT_VAL:
-            self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_SMPLRT_DIV, SMPLRT_VAL[sample_rate])
+            self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_SMPLRT_DIV, SMPLRT_VAL[sample_rate])
         else:
             # Custom range divisor in form 8kHz / (1 + SMPRT_DIV)
             if 0x00 < sample_rate < 0xFF:
-                self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_SMPLRT_DIV, sample_rate)
+                self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_SMPLRT_DIV, sample_rate)
             else:
                 raise ValueError('Sample rate input out of range')
 
         # Internal FIFO configuration
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_USER_CTRL, 0x44)
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_USER_CTRL, 0x44)
 
         # Data to be inserted to FIFO
         # Accelerometer or temperature data, or both
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_FIFO_EN, 0x08)
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_FIFO_EN, 0x08)
 
         # Set data ready interrupt register
-        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_INT_ENABLE, 0x01)
+        self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_INT_ENABLE, 0x01)
 
 
     def read_raw_data(self, reg_addr):
@@ -109,8 +110,8 @@ class MPU6050:
 
 
     def fifo_count(self):
-        fc_h = self.bus.read_byte_data(self.MPU6050_I2C_ADDR, REG_FIFO_COUNT_H)
-        fc_l = self.bus.read_byte_data(self.MPU6050_I2C_ADDR, REG_FIFO_COUNT_L)
+        fc_h = self.bus.read_byte_data(self.MPU6050_I2C_ADDR, self.__REG_FIFO_COUNT_H)
+        fc_l = self.bus.read_byte_data(self.MPU6050_I2C_ADDR, self.__REG_FIFO_COUNT_L)
 
         # Merge bytes
         fc = ((fc_h << 8) | fc_l)
@@ -126,12 +127,12 @@ class MPU6050:
         # FIFO overflow
         if self.fifo_count() >= 1024:
             # Reset FIFO
-            self.bus.write_byte_data(self.MPU6050_I2C_ADDR, REG_USER_CTRL, 0x44)
+            self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_USER_CTRL, 0x44)
 
         # Measure acceleration
-        accel_x = self.read_raw_data(REG_ACCEL_XOUT_H) / self.ACCEL_DIV
-        accel_y = self.read_raw_data(REG_ACCEL_YOUT_H) / self.ACCEL_DIV
-        accel_z = self.read_raw_data(REG_ACCEL_ZOUT_H) / self.ACCEL_DIV
+        accel_x = self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV
+        accel_y = self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV
+        accel_z = self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV
         # temp = self.read_raw_data(REG_TEMP_OUT_H) / -100
 
         # Measure time period
