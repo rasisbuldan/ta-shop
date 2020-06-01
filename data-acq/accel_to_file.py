@@ -1,5 +1,5 @@
 import numpy as np
-from mpu6050_regist import MPU6050
+from mpu6050.mpu6050_regist import MPU6050
 from datetime import datetime
 
 # MPU6050 object declaration
