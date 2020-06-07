@@ -42,11 +42,7 @@ class Vibration():
 
     # Calculate offset and update time array to start from zero
     def preProcessTime(self):
-        time_0 = self.time[0]
-        for i in range(1, self.time.shape[0]):
-            #print(self.time[i])
-            self.time[i] = (self.time[i] - time_0)/10000
-        self.time[0] = 0
+        self.time = np.cumsum(self.time)
 
     # Remove gravity offset from Z-axis
     def preProcessZ(self):
@@ -257,14 +253,21 @@ if __name__ == "__main__":
     #m2_vib3_train = Vibration('data/processed/m2_vib3_train.csv','Broken Train')
     #m2_vib3_test = Vibration('data/processed/m2_vib3_test.csv','Broken Test')
 
-    m_vib = Vibration('source/data/accel_00_42_30.txt','Test')
+    m_vib_s = Vibration('source/data/accel_01_03_56_s1000.txt','Test (no props)')
+    m_vib_ps = Vibration('source/data/accel_01_14_50_ps1000.txt','Test (with props)')
     #m1_vib1_test.plotFFT()
     #m1_vib1_train.plotFFT()
     
-    m_vib.plot(150,'x')
+    m_vib_s.plot(500,'x','r')
+    m_vib_ps.plot(500,'x','b')
     plt.show()
 
-    m_vib.plotFFT()
+    m_vib_s.plotFFT()
+    m_vib_ps.plotFFT()
+    plt.show()
+
+    m_vib_s.plotPSD('x')
+    m_vib_ps.plotPSD('x')
     plt.show()
 
     #binClass = BinaryClassifier()
