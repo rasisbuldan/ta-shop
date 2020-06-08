@@ -253,7 +253,7 @@ if __name__ == "__main__":
     #m2_vib3_train = Vibration('data/processed/m2_vib3_train.csv','Broken Train')
     #m2_vib3_test = Vibration('data/processed/m2_vib3_test.csv','Broken Test')
 
-    m_vib_s = Vibration('source/data/accel_01_03_56_s1000.txt','Test (no props)')
+    m_vib_s = Vibration('source/data/accel_01_13_08_ps600.txt','Test (no props)')
     m_vib_ps = Vibration('source/data/accel_01_14_50_ps1000.txt','Test (with props)')
     #m1_vib1_test.plotFFT()
     #m1_vib1_train.plotFFT()
