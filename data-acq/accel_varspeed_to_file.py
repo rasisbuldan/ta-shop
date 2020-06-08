@@ -4,6 +4,8 @@ from datetime import datetime
 from time import sleep
 import serial
 
+mpu1 = MPU6050(i2c_addr=0x68, g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
+
 # Serial communication to arduino
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.8)
 ser.write(b'Serial initialized')
@@ -12,11 +14,10 @@ ser.write(b'Serial initialized')
 sleep(10)
 
 # MPU6050 object declaration
-mpu1 = MPU6050(i2c_addr=0x68, g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
 
 # Data acquisition iteration
-min_speed = 200
-max_speed = 800
+min_speed = 1500
+max_speed = 1700
 n_sample = 10000
 
 for speed in range(min_speed, max_speed, 10):
@@ -38,4 +39,4 @@ for speed in range(min_speed, max_speed, 10):
         accel_arr = np.append(accel_arr, accel_data, axis=0)
 
     # Save to file
-    np.savetxt('data_acq/accel_data/accel_speed_' + measure_time + '_' + speed + '.txt', accel_arr, delimiter=',', fmt='%.8f')
+    np.savetxt('data-acq/accel-data/accel_speed_' + measure_time + '_' + str(speed) + '.txt', accel_arr, delimiter=',', fmt='%.8f')
