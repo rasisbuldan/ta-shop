@@ -1,19 +1,27 @@
+'''
+Vibration measurement with sweep throttle value
+from min_speed to max_speed, each throttle correspond
+to one measurement file containing n_sample data point
+
+Sending throttle value over serial port /dev/ttyACM0
+Saving file to data-acq/accel-data
+'''
+
 import numpy as np
 from mpu6050.mpu6050_regist import MPU6050
 from datetime import datetime
 from time import sleep
 import serial
 
+# MPU6050 object declaration
 mpu1 = MPU6050(i2c_addr=0x68, g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
 
-# Serial communication to arduino
+# Opening serial communication to arduino
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.8)
 ser.write(b'Serial initialized')
 
-# Arming motors
+# Arming motor delay
 sleep(10)
-
-# MPU6050 object declaration
 
 # Data acquisition iteration
 min_speed = 1500
