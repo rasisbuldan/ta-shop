@@ -257,7 +257,7 @@ if __name__ == "__main__":
     #m2_vib3_train = Vibration('data/processed/m2_vib3_train.csv','Broken Train')
     #m2_vib3_test = Vibration('data/processed/m2_vib3_test.csv','Broken Test')
 
-    m_vib = Vibration('source/data/accel_00_42_30.txt','Test')
+    m_vib = Vibration('data/sim.txt','Test')
     #m1_vib1_test.plotFFT()
     #m1_vib1_train.plotFFT()
     
