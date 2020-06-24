@@ -1,6 +1,7 @@
 var arDrone = require('ar-drone');
 const { fstat } = require('fs');
 var client = new arDrone.createClient();
+client.config('general:navdata_demo', 'FALSE');
 var fs = require('fs')
 var navdataBuf = []
 var t0 = 0;
@@ -12,6 +13,7 @@ var t1 = 0;
 
 console.log('Connected.. collecting navigation data');
 t0 = new Date().getTime();
+client.calibrate(1)
 /* client.takeoff();
 
 client
@@ -23,7 +25,7 @@ client
         this.land();
     }) */
 
-//client.calibrate(1)
+//
 client.on('navdata', (navdata) => {
     t1 = new Date().getTime();
     //console.log('Interpacket time ', t1 - t0);
