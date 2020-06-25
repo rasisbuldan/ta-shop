@@ -23,4 +23,4 @@ while True:
         pitch=-0.1,
         throttle=0.6,
         duration=0.2,
-    )
+    ).join()
