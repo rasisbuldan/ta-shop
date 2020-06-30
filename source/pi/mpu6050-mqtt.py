@@ -138,6 +138,18 @@ class MPU6050:
 
         return fc
 
+    def reset_offset(self):
+        # Averaging data from 100 accel samples
+        avg_array = [[],[],[]]
+        for i in range(100):
+            accel = self.get_accel_data()
+            avg_array[0].append(accel[1])
+            avg_array[1].append(accel[2])
+            avg_array[2].append(accel[3])
+
+        self.x_offset = np.average(avg_array[0])
+        self.y_offset = np.average(avg_array[1])
+        self.z_offset = np.average(avg_array[2])
 
     def get_accel_data(self):
         # Store start time (in nanoseconds)
@@ -150,9 +162,9 @@ class MPU6050:
             self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_USER_CTRL, 0x44)
 
         # Measure acceleration
-        accel_x = self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV
-        accel_y = self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV
-        accel_z = self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV
+        accel_x = (self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV) - self.x_offset
+        accel_y = (self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV) - self.y_offset
+        accel_z = (self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV) - self.z_offset
         # temp = self.read_raw_data(REG_TEMP_OUT_H) / -100
 
         # Measure time period
@@ -184,6 +196,8 @@ if __name__ == '__main__':
 
     mpu1 = MPU6050(i2c_addr=0x68, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
     mpu2 = MPU6050(i2c_addr=0x69, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
+    mpu1.reset_offset()
+    mpu2.reset_offset()
     
     while True:
         accel1 = mpu1.get_accel_data()
