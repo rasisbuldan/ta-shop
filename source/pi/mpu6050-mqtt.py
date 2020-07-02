@@ -62,6 +62,11 @@ class MPU6050:
     __REG_WHO_AM_I        = 0x75
     __REG_INT_ENABLE      = 0x38
 
+    # Attributes
+    x_offset = 0
+    y_offset = 0
+    z_offset = 0
+
     def __init__(self, i2c_addr, g_range, sample_rate, verbose=False, accel_ms=1, temp_ms=1):
         '''
         Initialization
@@ -83,10 +88,10 @@ class MPU6050:
         # Store class attributes
         self.MPU6050_I2C_ADDR = i2c_addr
         self.verbose = verbose
-        
+
         # Power management (ensure chip not in sleep mode, activate temperature measurement)
         self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_PWR_MGMT_1, 0x01)
-        
+
         # Accelerometer range configuration
         self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_ACCEL_CONFIG, RANGE_VAL[g_range][0])
         self.ACCEL_DIV = float(RANGE_VAL[g_range][1])
@@ -174,15 +179,16 @@ class MPU6050:
         if self.verbose:
             print('addr: {} \t time: {}ms \t x: {}g \t y: {}g \t z: {}g'.format(
                     hex(self.MPU6050_I2C_ADDR), time_delta / 1000000, accel_x, accel_y, accel_z))
-        
+
         return (time_delta, accel_x, accel_y, accel_z)
 
 def on_connect(client, userdata, flags, rc):
     print("Connection: ", rc)
+    print('Subscribing to topic/mpu6050')
     client.subscribe('topic/mpu6050')
 
 def on_message(client, userdata, msg):
-    print('Rcv message on', msg.topic, ':', str(msg.mpuData))
+    print('Rcv message on', msg.topic, ':', str(msg.payload))
 
 if __name__ == '__main__':
     # Initialize MQTT connection
@@ -195,13 +201,14 @@ if __name__ == '__main__':
     client.connect('192.168.0.118', port=1884, keepalive=1800)
 
     mpu1 = MPU6050(i2c_addr=0x68, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
-    mpu2 = MPU6050(i2c_addr=0x69, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
+    #mpu2 = MPU6050(i2c_addr=0x69, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
     mpu1.reset_offset()
-    mpu2.reset_offset()
-    
+    #mpu2.reset_offset()
+    time.sleep(2)
+
     while True:
         accel1 = mpu1.get_accel_data()
-        accel2 = mpu2.get_accel_data()
+        #accel2 = mpu2.get_accel_data()
         #accel_delta = [(accel1[i] - accel2[i]) for i in range(len(accel1))]
 
         # mpu1
@@ -211,10 +218,10 @@ if __name__ == '__main__':
         mpuData["mpu1"]["z"] = accel1[3]
 
         # mpu2
-        mpuData["mpu2"]["timeDelta"] = accel2[0]
-        mpuData["mpu2"]["x"] = accel2[1]
-        mpuData["mpu2"]["y"] = accel2[2]
-        mpuData["mpu2"]["z"] = accel2[3]
+        #mpuData["mpu2"]["timeDelta"] = accel2[0]
+        #mpuData["mpu2"]["x"] = accel2[1]
+        #mpuData["mpu2"]["y"] = accel2[2]
+        #mpuData["mpu2"]["z"] = accel2[3]
 
         # Convert to JSON
         payload = json.dumps(mpuData)
