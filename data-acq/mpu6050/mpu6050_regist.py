@@ -1,6 +1,6 @@
 import smbus
 import time
-
+import numpy as np
 
 # Measurement range dictionary (register value, MSB count)
 RANGE_VAL = {
@@ -119,6 +119,20 @@ class MPU6050:
         return fc
 
 
+    def reset_offset(self):
+        # Averaging data from 100 accel samples
+        avg_array = [[],[],[]]
+        for i in range(100):
+            accel = self.get_accel_data()
+            avg_array[0].append(accel[1])
+            avg_array[1].append(accel[2])
+            avg_array[2].append(accel[3])
+
+        self.x_offset = np.average(avg_array[0])
+        self.y_offset = np.average(avg_array[1])
+        self.z_offset = np.average(avg_array[2])
+
+
     def get_accel_data(self):
         # Store start time (in nanoseconds)
         time_start = time.clock_gettime_ns(time.CLOCK_REALTIME)
@@ -146,9 +160,11 @@ class MPU6050:
         return (time_delta, accel_x, accel_y, accel_z)
 
 if __name__ == '__main__':
-    mpu1 = MPU6050(i2c_addr=0x68, g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
-    mpu2 = MPU6050(i2c_addr=0x69, g_range='2g', sample_rate=1000, accel_ms=1, temp_ms=1)
-    
+    mpu1 = MPU6050(i2c_addr=0x68, g_range='2g', sample_rate=1000)
+    mpu2 = MPU6050(i2c_addr=0x69, g_range='2g', sample_rate=1000)
+    mpu1.reset_offset()
+    mpu2.reset_offset()
+
     while True:
         accel1 = mpu1.get_accel_data()
         accel2 = mpu2.get_accel_data()
