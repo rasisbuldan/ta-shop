@@ -22,7 +22,7 @@ n_sample = 10000
 t_period = 3600  # seconds
 
 # MPU6050 object declaration
-mpu1 = MPU6050(i2c_addr=0x68, g_range='8g', sample_rate=1000, accel_ms=1, temp_ms=1)
+mpu1 = MPU6050(i2c_addr=0x68, g_range='16g', sample_rate=1000, accel_ms=1, temp_ms=1)
 #mpu1.reset_offset()
 #print(mpu1.get_accel_data())
 

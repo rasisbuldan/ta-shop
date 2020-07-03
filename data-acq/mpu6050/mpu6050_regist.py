@@ -162,6 +162,32 @@ class MPU6050:
         accel_x = (self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV) - self.x_offset
         accel_y = (self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV) - self.y_offset
         accel_z = (self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV) - self.z_offset
+
+        # Measure time period
+        time_delta = time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev
+        time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
+
+        if self.verbose:
+            print('addr: {} \t time: {}ms \t x: {}g \t y: {}g \t z: {}g'.format(
+                    hex(self.MPU6050_I2C_ADDR), time_delta / 1000000, accel_x, accel_y, accel_z))
+        
+        return (time_delta, accel_x, accel_y, accel_z)
+
+    ### Barbaric ###
+    def get_combined_data(self):
+        # Store start time (in nanoseconds)
+        time_start = time.clock_gettime_ns(time.CLOCK_REALTIME)
+        time_prev  = time_start
+
+        # FIFO overflow
+        if self.fifo_count() >= 1024:
+            # Reset FIFO
+            self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_USER_CTRL, 0x44)
+
+        # Measure acceleration
+        accel_x = (self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV) - self.x_offset
+        accel_y = (self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV) - self.y_offset
+        accel_z = (self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV) - self.z_offset
         
         # INA260
         voltage = self.ina260.voltage
@@ -176,10 +202,6 @@ class MPU6050:
                     hex(self.MPU6050_I2C_ADDR), time_delta / 1000000, accel_x, accel_y, accel_z))
         
         return (time_delta, accel_x, accel_y, accel_z, voltage, current)
-
-    ### Barbaric ###
-    def get_combined_data(self):
-
 
 if __name__ == '__main__':
     mpu1 = MPU6050(i2c_addr=0x68, g_range='4g', sample_rate=1000)
