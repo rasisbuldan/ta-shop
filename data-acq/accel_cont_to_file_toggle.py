@@ -29,9 +29,9 @@ mpu1 = MPU6050(i2c_addr=0x68, g_range='8g', sample_rate=1000, accel_ms=1, temp_m
 # INA260 object declaration
 i2c = board.I2C()
 ina260 = adafruit_ina260.INA260(i2c)
-ina260.averaging_count = adafruit_ina260.AveragingCount.COUNT_16
-ina260.current_conversion_time = adafruit_ina260.ConversionTime.TIME_558_us
-ina260.voltage_conversion_time = adafruit_ina260.ConversionTime.TIME_558_us
+ina260.averaging_count = adafruit_ina260.AveragingCount.COUNT_1
+ina260.current_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
+ina260.voltage_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
 
 # Opening serial communication to arduino
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.8)
@@ -60,9 +60,9 @@ def motorIsOn(accelData):
 def getAccelSample(n_sample):
     accel_arr = np.array([]).reshape(0,6)
     for s in range(n_sample):
-        accel_data = np.array(mpu1.get_accel_data()).reshape(1,4)
-        vi_data = np.array([ina260.voltage, ina260.current]).reshape(1,2)
-        accel_data = np.append(accel_data, vi_data, axis=1)
+        accel_data = np.array(mpu1.get_accel_data()).reshape(1,6)
+        #vi_data = np.array([ina260.voltage, ina260.current]).reshape(1,2)
+        #accel_data = np.append(accel_data, vi_data, axis=1)
         accel_arr = np.append(accel_arr, accel_data, axis=0)
 
     return accel_arr

@@ -2,6 +2,10 @@ import smbus
 import time
 import numpy as np
 
+# INA260 Voltage-Current Sensor
+import board
+import adafruit_ina260
+
 # Measurement range dictionary (register value, MSB count)
 RANGE_VAL = {
     '2g'  : (0x00, 16384),
@@ -42,7 +46,7 @@ class MPU6050:
     __REG_WHO_AM_I        = 0x75
     __REG_INT_ENABLE      = 0x38
 
-    def __init__(self, i2c_addr, g_range, sample_rate, verbose=False, accel_ms=1, temp_ms=1):
+    def __init__(self, i2c_addr, g_range, sample_rate, verbose=False, accel_ms=1, temp_ms=1, include_ina=False):
         '''
         Initialization
         args:
@@ -97,6 +101,14 @@ class MPU6050:
         # Set data ready interrupt register
         self.bus.write_byte_data(self.MPU6050_I2C_ADDR, self.__REG_INT_ENABLE, 0x01)
 
+        if include_ina:
+            # INA260 object declaration
+            i2c = board.I2C()
+            ina260 = adafruit_ina260.INA260(i2c)
+            ina260.averaging_count = adafruit_ina260.AveragingCount.COUNT_1
+            ina260.current_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
+            ina260.voltage_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
+
 
     def read_raw_data(self, reg_addr):
         # 16-bit data (accelerometer and gyro)
@@ -150,7 +162,10 @@ class MPU6050:
         accel_x = (self.read_raw_data(self.__REG_ACCEL_XOUT_H) / self.ACCEL_DIV) - self.x_offset
         accel_y = (self.read_raw_data(self.__REG_ACCEL_YOUT_H) / self.ACCEL_DIV) - self.y_offset
         accel_z = (self.read_raw_data(self.__REG_ACCEL_ZOUT_H) / self.ACCEL_DIV) - self.z_offset
-        # temp = self.read_raw_data(REG_TEMP_OUT_H) / -100
+        
+        # INA260
+        voltage = self.ina260.voltage
+        current = self.ina260.current
 
         # Measure time period
         time_delta = time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev
@@ -160,7 +175,11 @@ class MPU6050:
             print('addr: {} \t time: {}ms \t x: {}g \t y: {}g \t z: {}g'.format(
                     hex(self.MPU6050_I2C_ADDR), time_delta / 1000000, accel_x, accel_y, accel_z))
         
-        return (time_delta, accel_x, accel_y, accel_z)
+        return (time_delta, accel_x, accel_y, accel_z, voltage, current)
+
+    ### Barbaric ###
+    def get_combined_data(self):
+
 
 if __name__ == '__main__':
     mpu1 = MPU6050(i2c_addr=0x68, g_range='4g', sample_rate=1000)
