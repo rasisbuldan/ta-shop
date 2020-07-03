@@ -21,7 +21,7 @@ drive = GoogleDrive(gauth)
 
 
 # Folder to check
-DATA_PATH = '/home/pi/rasis/ta-shop/data-acq/accel-data-cont2/'
+DATA_PATH = '/home/pi/rasis/ta-shop/data-acq/accel-vi-data-cont/'
 
 # New uploaded files
 uploaded_set = set()
@@ -131,4 +131,4 @@ if __name__ == '__main__':
     # Infinite loop
     while True:
         # Upload to specific folder ('Tugas Akhir/data/accel-data-cont2')
-        upload_new_files(DATA_PATH, '1pvP2-n6g4bmlKGRX_sfPNKGjqHXCS1rW')
+        upload_new_files(DATA_PATH, '1-maS6Zb4bHuBx4AD7UL0iB_keex8hgxn')

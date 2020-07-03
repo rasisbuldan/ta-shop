@@ -37,8 +37,7 @@ class INA260:
         Convert two's complement to integer with len bit
         '''
         if(val & (1 << len - 1)):
-			val = val - (1 << len)
-        
+            val = val - (1 << len)
         return val
 
 
@@ -53,7 +52,7 @@ class INA260:
         '''
         Get bus voltage
         '''
-        
+
         # Read 2 blocks of data
         raw_vbus = self.bus.read_i2c_block_data(self.INA260_I2C_ADDR, self.__REG_BUS_VOLTAGE_ADDR, 2)
         data_vbus = raw_vbus[0] * 256 + raw_vbus[1]
@@ -61,7 +60,6 @@ class INA260:
 
         return val_vbus
 
-    
     def get_current(self):
         raw_current = self.bus.read_i2c_block_data(self.INA260_I2C_ADDR, self.__REG_CURRENT, 2)
         data_current = raw_current[0] * 256 + raw_current[1]
@@ -70,9 +68,13 @@ class INA260:
         # Signed (negative)
         if sign_current:
             val_current = float(self.twos_compliment_to_int(data_current, 16)) / 1000.0 * self.CURRENT_LSB
-        
         else:
             val_current = float(data_current) / 1000.0 * self.CURRENT_LSB
 
+        return val_current * 1000
+
 if __name__ == '__main__':
-    ina = INA260(i2c_addr=0x44, verbose=True)
+    ina = INA260(i2c_addr=0x40, verbose=True)
+    while True:
+        print("Voltage: {:.4f} | Current: {:.4f}".format(ina.get_bus_voltage(), ina.get_current()))
+        time.sleep(0.5)

@@ -9,6 +9,7 @@ from mpu6050.mpu6050_regist import MPU6050
 from datetime import datetime
 from time import sleep
 import serial
+import sys
 
 # Data acquisition parameter
 const_speed = 1048
