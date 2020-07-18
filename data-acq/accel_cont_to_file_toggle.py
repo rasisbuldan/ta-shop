@@ -15,6 +15,7 @@ import math
 import sys
 import board
 import adafruit_ina260
+import time
 
 # Data acquisition parameter
 const_speed = 1400
@@ -22,7 +23,7 @@ n_sample = 10000
 t_period = 3600  # seconds
 
 # MPU6050 object declaration
-mpu1 = MPU6050(i2c_addr=0x68, g_range='16g', sample_rate=1000, accel_ms=1, temp_ms=1)
+mpu1 = MPU6050(i2c_addr=0x68, g_range='16g', sample_rate=1000, include_ina=True)
 #mpu1.reset_offset()
 #print(mpu1.get_accel_data())
 
@@ -30,8 +31,8 @@ mpu1 = MPU6050(i2c_addr=0x68, g_range='16g', sample_rate=1000, accel_ms=1, temp_
 i2c = board.I2C()
 ina260 = adafruit_ina260.INA260(i2c)
 ina260.averaging_count = adafruit_ina260.AveragingCount.COUNT_1
-ina260.current_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
-ina260.voltage_conversion_time = adafruit_ina260.ConversionTime.TIME_140_us
+ina260.current_conversion_time = adafruit_ina260.ConversionTime.TIME_558_us
+ina260.voltage_conversion_time = adafruit_ina260.ConversionTime.TIME_558_us
 
 # Opening serial communication to arduino
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.8)
@@ -58,22 +59,41 @@ def motorIsOn(accelData):
 
 
 def getAccelSample(n_sample):
-    accel_arr = np.array([]).reshape(0,6)
+    accel_arr = np.array([]).reshape(0,4)
+    time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
     for s in range(n_sample):
-        accel_data = np.array(mpu1.get_accel_data()).reshape(1,6)
-        #vi_data = np.array([ina260.voltage, ina260.current]).reshape(1,2)
-        #accel_data = np.append(accel_data, vi_data, axis=1)
+        accel = mpu1.get_accel_data()
+        accel_data = np.array([time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev, accel[0], accel[1], accel[2]]).reshape(1,4)
         accel_arr = np.append(accel_arr, accel_data, axis=0)
+        time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
 
     return accel_arr
+
+
+def getVISample(n_sample):
+    vi_arr = np.array([]).reshape(0,3)
+    time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
+    for s in range(n_sample):
+        v = ina260.voltage
+        i = ina260.current
+        vi_data = np.array([time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev, v, i]).reshape(1,3)
+        vi_arr = np.append(vi_arr, vi_data, axis=0)
+        time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
+
+    return vi_arr
+
 
 def armMotor():
     ser.write(bytes('48s', 'ascii'))
     ser_read = ser.readline()
     sleep(6)
 
+
 def turnOnMotor(throttle):
     print('Turning on motor with throttle {}'.format(throttle))
+    payload = str(throttle) + 's'
+    ser.write(bytes(payload, 'ascii'))
+    sleep(5)
 
     # Wait until motor is started successfully
     while not motorIsOn(getAccelSample(1000)):
@@ -85,16 +105,19 @@ def turnOnMotor(throttle):
 
         print('[!] Sending throttle to motor', end='\r')
         # Sending speed payload to serial
-        payload = str(throttle) + 's'
         ser.write(bytes(payload, 'ascii'))
         ser_read = ser.readline()
-        sleep(4)
+        sleep(5)
 
     print('[o] Motor is started successfully at', datetime.now().strftime('%H:%M:%S %d-%m-%y'))
 
 
 def turnOffMotor():
     print('Turning off motor')
+    armMotor()
+    ser.write(bytes('50s', 'ascii'))
+    ser.readline()
+    sleep(5)
 
     # Wait until motor is started successfully
     while motorIsOn(getAccelSample(1000)):
@@ -103,6 +126,7 @@ def turnOffMotor():
         armMotor()
         ser.write(bytes('50s', 'ascii'))
         ser_read = ser.readline()
+        sleep(5)
 
     print('[-] Motor is stopped successfully at', datetime.now().strftime('%H:%M:%S %d-%m-%y'))
 
@@ -131,15 +155,17 @@ while True:
         td_minutes = (time_delta.seconds - (td_hours * 3600)) // 60
         td_seconds = (time_delta.seconds - (td_hours * 3600) - (td_minutes * 60))
         measure_time = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-        print('Starting vibration measurement with throttle',const_speed,'at',measure_time, 
+        print('Starting vibration measurement at throttle',const_speed,'at',measure_time, 
             '| elapsed {}:{}:{}'.format(td_hours, td_minutes, td_seconds))
 
         # Get n_sample acceleration point
         try:
             accel_arr = getAccelSample(n_sample)
+            vi_arr = getVISample(n_sample)
 
             # Save to file
-            np.savetxt('accel-vi-data-cont/accel_cont_' + measure_time + '_' + str(const_speed) + '.txt', accel_arr, delimiter=',', fmt='%.5f')
+            np.savetxt('accel-vi-data-cont/accel/accel_cont_' + measure_time + '_' + str(const_speed) + '.txt', accel_arr, delimiter=',', fmt='%.5f')
+            np.savetxt('accel-vi-data-cont/vi/vi_cont_' + measure_time + '_' + str(const_speed) + '.txt', vi_arr, delimiter=',', fmt='%.5f')
 
         # Quit on keyboard interrupt
         except KeyboardInterrupt:
@@ -147,8 +173,7 @@ while True:
 
         # Error occured while reading accel, turn off motor and print error message
         except Exception as e:
-            print('Error occured, turning off motor')
-            turnOffMotor()
+            print('[!] Error occured')
             print(e)
 
     # Continuous off
