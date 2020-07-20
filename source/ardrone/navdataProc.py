@@ -51,6 +51,16 @@ class NavData:
 
         return [x_trans, y_trans, z_trans]
 
+    def getMotorPWM(self):
+        return self.navdata['pwm']['motors']
+        
+    def getSatMotors(self):
+        return self.navdata['pwm']['satMotors']
+    
+    def getMotorCurrents(self):
+        return self.navdata['pwm']['motorCurrents']
+
+
 class FlightData:
     def __init__(self, filename):
         self.navdataArray = [NavData(n) for n in getJSONArray(filename)]
@@ -273,16 +283,90 @@ class FlightData:
         plt.tight_layout()
         plt.show()
 
+    def plotPWM(self):
+        pwm = [nav.getMotorPWM() for nav in self.navdataArray]
+        pwm1 = [p[0] for p in pwm]
+        pwm2 = [p[1] for p in pwm]
+        pwm3 = [p[2] for p in pwm]
+        pwm4 = [p[3] for p in pwm]
+        print('\n---\npwm1', pwm1)
+        print('\n---\npwm2', pwm2)
+        print('\n---\npwm-dif', [p[0]-p[1] for p in pwm])
+        
+        # Subplot 1 : Motor 1
+        plt.subplot(411)
+        plt.plot(self.timeArray, pwm1)
+        plt.title('PWM1 over time')
+        plt.grid(True)
+
+        # Subplot 2 : Motor 2
+        plt.subplot(412)
+        plt.plot(self.timeArray, pwm2)
+        plt.title('PWM2 over time')
+        plt.grid(True)
+
+        # Subplot 3 : Motor 3
+        plt.subplot(413)
+        plt.plot(self.timeArray, pwm3)
+        plt.title('PWM3 over time')
+        plt.grid(True)
+
+        # Subplot 4 : Motor 4
+        plt.subplot(414)
+        plt.plot(self.timeArray, pwm4)
+        plt.title('PWM4 over time')
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plotMotorCurrent(self):
+        mc = [nav.getMotorCurrents() for nav in self.navdataArray]
+        mc1 = [c[0] for c in mc]
+        mc2 = [c[1] for c in mc]
+        mc3 = [c[2] for c in mc]
+        mc4 = [c[3] for c in mc]
+        print('\n---\nMC', mc)
+        
+        # Subplot 1 : Motor 1
+        plt.subplot(411)
+        plt.plot(self.timeArray, mc1)
+        plt.title('MC1 over time')
+        plt.grid(True)
+
+        # Subplot 2 : Motor 2
+        plt.subplot(412)
+        plt.plot(self.timeArray, mc2)
+        plt.title('MC2 over time')
+        plt.grid(True)
+
+        # Subplot 3 : Motor 3
+        plt.subplot(413)
+        plt.plot(self.timeArray, mc3)
+        plt.title('MC3 over time')
+        plt.grid(True)
+
+        # Subplot 4 : Motor 4
+        plt.subplot(414)
+        plt.plot(self.timeArray, mc4)
+        plt.title('MC4 over time')
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
 
 if __name__ == '__main__':
     # Ascent
-    FD = FlightData('C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone/nodejs/flight-data/jul_6/flight_1594006229371.json')
+    FD = FlightData('/home/stoorm/github/ta-shop/source/ardrone/nodejs/flight-data/jul_6/flight_1594007113457.json')
     
     print('Processing Flight Data with {} points'.format(len(FD.navdataArray)))
     print('Battery Percentage:',FD.navdataArray[0].getBatteryPercentage())
     FD.plot('deg')
-    FD.plotAltitude()
+    #FD.plotAltitude()
     #FD.plotTrajectory()
     #FD.plotTimeDelta()
-    FD.plotTranslationAscent()
-    FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
+    #FD.plotTranslationAscent()
+    #FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
+    FD.plotPWM()
+    FD.plotMotorCurrent()

@@ -1,53 +1,115 @@
-var arDrone = require('ar-drone');
-const { fstat } = require('fs');
-var client = new arDrone.createClient();
-client.config('general:navdata_demo', 'FALSE');
 var fs = require('fs')
-var navdataBuf = []
+
+var arDrone = require('ar-drone');
+var client = new arDrone.createClient();
+
+/* Config : send all navdata */
+client.config('general:navdata_demo', 'FALSE');
+
+/* Global variable */
 var t0 = 0;
 var t1 = 0;
 
-/* function saveToFile(data) {
-    fs.writeFile('./data.txt', JSON.stringify(data), 'utf-8')
+console.log('Connected.. collecting navigation data');
+flight_time = new Date().getTime();
+t0 = new Date().getTime();
+
+/* Calibrate FTRIM before flight */
+//client.calibrate(1);
+
+/*
+    Flight plan:
+        - Takeoff (4s)
+        - Front (2s)
+        - Up (2s)
+        - Back (2s)
+        - Left (2s)
+        - Down (3s)
+        - Land (3s)
+*/
+
+/* Hover for 10s */
+try {
+    client
+        .after(4000, function() {
+            client.takeoff();
+        })
+
+        .after(10000, function() {
+            client.stop();
+            client.land();
+        });
+}
+
+/* Ascend */
+/* try {
+    client
+        .after(4000, function() {
+            client.takeoff();
+        })
+
+        .after(6000, function() {
+            this.up(0.3);
+        })
+
+        .after(4000, function() {
+            this.down(0.3);
+        })
+
+        .after(4000, function() {
+            this.stop();
+            this.land();
+        });
 } */
 
-console.log('Connected.. collecting navigation data');
-t0 = new Date().getTime();
-client.calibrate(1)
-/* client.takeoff();
+/* Maneuver */
+/* try {
+    client
+        .after(4000, function() {
+            client.takeoff();
+        })
 
-client
-    .after(5000, function(){
-        this.clockwise(0.5);
-    })
-    .after(3000, function(){
-        this.stop();
-        this.land();
-    }) */
+        .after(6000, function() {
+            this.front(0.1);
+        })
 
-//
+        .after(4000, function() {
+            this.up(0.1);
+        })
+
+        .after(4000, function() {
+            this.back(0.15);
+        })
+
+        .after(4000, function() {
+            this.down(0.1);
+        })
+
+        .after(4000, function() {
+            this.stop();
+            this.land();
+        });
+} */
+
+catch(err) {
+    console.log("Error: ", err)
+    client
+        .after(100, function() {
+            this.stop();
+            this.land();
+        });
+}
+
+/* Navigation data received */
+i = 0;
 client.on('navdata', (navdata) => {
+    i++;
     t1 = new Date().getTime();
-    //console.log('Interpacket time ', t1 - t0);
-    //console.log('Update rate ', 1000 / (t1 - t0))
     if (navdata.demo) {
         navdata.timeDelta = t1 - t0;
-        //console.log('navdata: ', navdata);
-        /* const navdataObj = {
-            batteryPercentage: navdata.demo.batteryPercentage,
-            roll: navdata.demo.rotation.roll,
-            yaw: navdata.demo.rotation.yaw,
-            pitch: navdata.demo.rotation.pitch,
-            altitudeMeters: navdata.demo.altitudeMeters,
-            xVelocity: navdata.demo.velocity.x,
-            yVelocity: navdata.demo.velocity.y,
-            zVelocity: navdata.demo.velocity.z,
-        } */
-        //console.log('navdata: ', navdataObj)
-        //navdataBuf.push(navdataObj)
-        //navdataBuf.push(navdata.demo);
-        fs.appendFile('data.txt', JSON.stringify(navdata) + "\n", () => {
-            console.log('Appending data', navdataBuf.length);
+        filename = 'flight-data/flight_' + flight_time + '.json'
+        fs.appendFile(filename, JSON.stringify(navdata) + "\n", () => {
+            console.log('Flight data point: ' + i);
         });
     }
     t0 = new Date().getTime();
