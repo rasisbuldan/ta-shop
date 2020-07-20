@@ -145,11 +145,41 @@ class FlightData:
         ax.plot(xTransArray, yTransArray, zTransArray)
         plt.show()
 
+    def plotTranslationAscent2D(self):
+        transArray = [nav.getTranslation() for nav in self.navdataArray[150:-250]]
+        
+        tTransArray = self.timeArray[150:-250]
+        xTransArray = [-t[0]/1000 for t in transArray]
+        yTransArray = [-t[1]/1000 for t in transArray]
+        zTransArray = [t[2]/1000 for t in transArray]
+
+        # Subplot 1 : Pos X
+        plt.subplot(311)
+        plt.plot(tTransArray, xTransArray)
+        plt.title('Position X over time')
+        plt.grid(True)
+
+        # Subplot 2 : Pos Y
+        plt.subplot(312)
+        plt.plot(tTransArray, yTransArray)
+        plt.title('Position Y over time')
+        plt.grid(True)
+
+        # Subplot 3 : Pos Z
+        plt.subplot(313)
+        plt.plot(tTransArray, zTransArray)
+        plt.title('Position Z over time')
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+
     def plotTranslationAnim(self, n_data=1):
         transArray = [nav.getTranslation() for nav in self.navdataArray]
         xTransArray = [t[0] for t in transArray]
         yTransArray = [t[1] for t in transArray]
-        zTransArray = [-t[2] for t in transArray]
+        zTransArray = [t[2] for t in transArray]
         
         x_data = []
         y_data = []
@@ -216,56 +246,56 @@ class FlightData:
 
     def plot(self, rypunit='deg'):
         # Orientation
-        rollArray = [nav.getRollYawPitch(rypunit)[0] for nav in self.navdataArray]
-        yawArray = [(nav.getRollYawPitch(rypunit)[1]) for nav in self.navdataArray]
-        pitchArray = [nav.getRollYawPitch(rypunit)[2] for nav in self.navdataArray]
+        rollArray = [nav.getRollYawPitch(rypunit)[0] for nav in self.navdataArray[150:-250]]
+        yawArray = [(nav.getRollYawPitch(rypunit)[1]) for nav in self.navdataArray[150:-250]]
+        pitchArray = [nav.getRollYawPitch(rypunit)[2] for nav in self.navdataArray[150:-250]]
 
         # Velocity
-        vxArray= [(nav.getVelocity()[0]/1000) for nav in self.navdataArray]
-        vyArray= [(nav.getVelocity()[1]/1000) for nav in self.navdataArray]
-        vzArray= [(nav.getVelocity()[2]/1000) for nav in self.navdataArray]
+        vxArray= [(nav.getVelocity()[0]/1000) for nav in self.navdataArray[150:-250]]
+        vyArray= [(nav.getVelocity()[1]/1000) for nav in self.navdataArray[150:-250]]
+        vzArray= [(nav.getVelocity()[2]/1000) for nav in self.navdataArray[150:-250]]
 
         # Subplot 1 : Roll
         plt.subplot(321)
-        plt.plot(self.timeArray, rollArray)
+        plt.plot(self.timeArray[150:-250], rollArray)
         plt.title('Roll over time')
         plt.ylabel('Roll ({})'.format(rypunit))
-        plt.ylim(-190,190)
+        plt.ylim(-30,30)
         plt.grid(True)
 
         # Subplot 3 : Yaw
         plt.subplot(323)
-        plt.plot(self.timeArray, yawArray)
+        plt.plot(self.timeArray[150:-250], yawArray)
         plt.title('Yaw over time')
         plt.ylabel('Yaw ({})'.format(rypunit))
-        plt.ylim(-190,190)
+        plt.ylim(-70,-130)
         plt.grid(True)
 
         # Subplot 5 : Pitch
         plt.subplot(325)
-        plt.plot(self.timeArray, pitchArray)
+        plt.plot(self.timeArray[150:-250], pitchArray)
         plt.title('Pitch over time')
         plt.ylabel('Pitch ({})'.format(rypunit))
-        plt.ylim(-190,190)
+        plt.ylim(-30,30)
         plt.grid(True)
 
         # Subplot 2 : X velocity
         plt.subplot(322)
-        plt.plot(self.timeArray, vxArray)
+        plt.plot(self.timeArray[150:-250], vxArray)
         plt.title('X velocity over time')
         plt.ylabel('Velocity (m/s)')
         plt.grid(True)
 
         # Subplot 4 : Y velocity
         plt.subplot(324)
-        plt.plot(self.timeArray, vyArray)
+        plt.plot(self.timeArray[150:-250], vyArray)
         plt.title('Y velocity over time')
         plt.ylabel('Velocity (m/s)')
         plt.grid(True)
 
         # Subplot 6 : Z velocity
         plt.subplot(326)
-        plt.plot(self.timeArray, vzArray)
+        plt.plot(self.timeArray[150:-250], vzArray)
         plt.title('Z velocity over time')
         plt.ylabel('Velocity (m/s)')
         plt.grid(True)
@@ -281,8 +311,9 @@ if __name__ == '__main__':
     print('Processing Flight Data with {} points'.format(len(FD.navdataArray)))
     print('Battery Percentage:',FD.navdataArray[0].getBatteryPercentage())
     FD.plot('deg')
-    FD.plotAltitude()
+    #FD.plotAltitude()
     #FD.plotTrajectory()
     #FD.plotTimeDelta()
-    FD.plotTranslationAscent()
-    FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
+    #FD.plotTranslationAscent()
+    FD.plotTranslationAscent2D()
+    #FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
