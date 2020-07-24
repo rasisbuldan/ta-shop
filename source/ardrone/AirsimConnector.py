@@ -54,9 +54,6 @@ class AirsimConnector:
             flight_id = addNewFlightPlan()
 
             self.flight_plan[flight_id]['type'] = 'velocity_z'
-            
-            flight_data = [nav.getVelocity() for nav in flight_array]
-            zAlt = [nav.getAltitude() for nav in flight_array]
 
             zAltPrev = flight_array[0].getAltitude()
             for nav in flight_array:

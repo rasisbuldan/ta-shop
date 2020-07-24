@@ -89,6 +89,13 @@ class FlightData:
         yawArray = [(nav.getRollYawPitch(unit)[1]) for nav in self.navdataArray]
         pitchArray = [nav.getRollYawPitch(unit)[2] for nav in self.navdataArray]
 
+        self.plotSubplot(
+            n_plot=3,
+            x_data=self.timeArray,
+            y_data=[rollArray,yawArray,pitchArray],
+            title=['Roll','Yaw','Pitch']
+        )
+
         # Subplot 1 : Roll
         plt.subplot(311)
         plt.plot(self.timeArray, rollArray)
@@ -163,26 +170,12 @@ class FlightData:
         yTransArray = [-t[1]/1000 for t in transArray]
         zTransArray = [t[2]/1000 for t in transArray]
 
-        # Subplot 1 : Pos X
-        plt.subplot(311)
-        plt.plot(tTransArray, xTransArray)
-        plt.title('Position X over time')
-        plt.grid(True)
-
-        # Subplot 2 : Pos Y
-        plt.subplot(312)
-        plt.plot(tTransArray, yTransArray)
-        plt.title('Position Y over time')
-        plt.grid(True)
-
-        # Subplot 3 : Pos Z
-        plt.subplot(313)
-        plt.plot(tTransArray, zTransArray)
-        plt.title('Position Z over time')
-        plt.grid(True)
-
-        plt.tight_layout()
-        plt.show()
+        self.plotSubplot(
+            n_plot=3,
+            x_data=tTransArray,
+            y_data=[xTransArray,yTransArray,zTransArray],
+            title=['X Position','Y Position','Z Position']
+        )
 
 
     def plotTranslationAnim(self, n_data=1):
@@ -208,9 +201,6 @@ class FlightData:
             x_data = xTransArray[:frame]
             y_data = yTransArray[:frame]
             z_data = zTransArray[:frame]
-            #print('x:', x_data)
-            #print('y:', y_data)
-            #print('z:', z_data)
 
             line.set_data(x_data, y_data)
             line.set_3d_properties(z_data)
@@ -222,30 +212,6 @@ class FlightData:
         plt.show()
 
 
-    def plotTrajectory(self):
-        '''
-        Approximation using x(t) = x(t-1) + v(t-1) * dT
-                            y(t) = y(t-1) + v(t-1) * dT
-        '''
-        vxArray = [nav.getVelocity()[0] for nav in self.navdataArray]
-        vyArray = [nav.getVelocity()[1] for nav in self.navdataArray]
-
-        xposArray = [0]
-        yposArray = [0]
-
-        for i in range(1, len(min(vxArray, vyArray))):
-            xposArray.append(xposArray[i-1] + (vxArray[i-1] * self.timeDeltaArray[i-1]/1000000))
-            yposArray.append(yposArray[i-1] + (vyArray[i-1] * self.timeDeltaArray[i-1]/1000000))
-        
-        plt.plot(xposArray, yposArray)
-        plt.title('Drone trajectory over time')
-        plt.xlim(min(xposArray) * 1.5, max(xposArray) * 1.5)
-        plt.ylim(min(yposArray) * 1.5, max(yposArray) * 1.5)
-        plt.grid(True)
-        
-        plt.tight_layout()
-        plt.show()
-
     def plotAltitude(self):
         altitudeArray = [nav.getAltitude() for nav in self.navdataArray]
 
@@ -254,64 +220,24 @@ class FlightData:
         plt.show()
 
 
-    def plot(self, rypunit='deg'):
+    def plotOrientationVelocity(self, rypunit='deg'):
         # Orientation
-        rollArray = [nav.getRollYawPitch(rypunit)[0] for nav in self.navdataArray[150:-250]]
-        yawArray = [(nav.getRollYawPitch(rypunit)[1]) for nav in self.navdataArray[150:-250]]
-        pitchArray = [nav.getRollYawPitch(rypunit)[2] for nav in self.navdataArray[150:-250]]
+        rollArray = [nav.getRollYawPitch(rypunit)[0] for nav in self.navdataArray]
+        yawArray = [(nav.getRollYawPitch(rypunit)[1]) for nav in self.navdataArray]
+        pitchArray = [nav.getRollYawPitch(rypunit)[2] for nav in self.navdataArray]
 
         # Velocity
-        vxArray= [(nav.getVelocity()[0]/1000) for nav in self.navdataArray[150:-250]]
-        vyArray= [(nav.getVelocity()[1]/1000) for nav in self.navdataArray[150:-250]]
-        vzArray= [(nav.getVelocity()[2]/1000) for nav in self.navdataArray[150:-250]]
+        vxArray= [(nav.getVelocity()[0]/1000) for nav in self.navdataArray]
+        vyArray= [(nav.getVelocity()[1]/1000) for nav in self.navdataArray]
+        vzArray= [(nav.getVelocity()[2]/1000) for nav in self.navdataArray]
 
-        # Subplot 1 : Roll
-        plt.subplot(321)
-        plt.plot(self.timeArray[150:-250], rollArray)
-        plt.title('Roll over time')
-        plt.ylabel('Roll ({})'.format(rypunit))
-        plt.ylim(-30,30)
-        plt.grid(True)
+        self.plotSubplot(
+            n_plot=6,
+            x_data=self.timeArray,
+            y_data=[rollArray,vxArray,yawArray,vyArray,pitchArray,vzArray],
+            title=['Roll','X Velocity','Yaw','Y Velocity','Pitch','Z Velocity']
+        )
 
-        # Subplot 3 : Yaw
-        plt.subplot(323)
-        plt.plot(self.timeArray[150:-250], yawArray)
-        plt.title('Yaw over time')
-        plt.ylabel('Yaw ({})'.format(rypunit))
-        plt.ylim(-70,-130)
-        plt.grid(True)
-
-        # Subplot 5 : Pitch
-        plt.subplot(325)
-        plt.plot(self.timeArray[150:-250], pitchArray)
-        plt.title('Pitch over time')
-        plt.ylabel('Pitch ({})'.format(rypunit))
-        plt.ylim(-30,30)
-        plt.grid(True)
-
-        # Subplot 2 : X velocity
-        plt.subplot(322)
-        plt.plot(self.timeArray[150:-250], vxArray)
-        plt.title('X velocity over time')
-        plt.ylabel('Velocity (m/s)')
-        plt.grid(True)
-
-        # Subplot 4 : Y velocity
-        plt.subplot(324)
-        plt.plot(self.timeArray[150:-250], vyArray)
-        plt.title('Y velocity over time')
-        plt.ylabel('Velocity (m/s)')
-        plt.grid(True)
-
-        # Subplot 6 : Z velocity
-        plt.subplot(326)
-        plt.plot(self.timeArray[150:-250], vzArray)
-        plt.title('Z velocity over time')
-        plt.ylabel('Velocity (m/s)')
-        plt.grid(True)
-
-        plt.tight_layout()
-        plt.show()
 
     def plotPWM(self):
         pwm = [nav.getMotorPWM() for nav in self.navdataArray]
@@ -319,36 +245,14 @@ class FlightData:
         pwm2 = [p[1] for p in pwm]
         pwm3 = [p[2] for p in pwm]
         pwm4 = [p[3] for p in pwm]
-        print('\n---\npwm1', pwm1)
-        print('\n---\npwm2', pwm2)
-        print('\n---\npwm-dif', [p[0]-p[1] for p in pwm])
         
-        # Subplot 1 : Motor 1
-        plt.subplot(411)
-        plt.plot(self.timeArray, pwm1)
-        plt.title('PWM1 over time')
-        plt.grid(True)
+        self.plotSubplot(
+            n_plot=4,
+            x_data=self.timeArray,
+            y_data=[pwm1,pwm2,pwm3,pwm4],
+            title=['PWM1','PWM2','PWM3','PWM4']
+        )
 
-        # Subplot 2 : Motor 2
-        plt.subplot(412)
-        plt.plot(self.timeArray, pwm2)
-        plt.title('PWM2 over time')
-        plt.grid(True)
-
-        # Subplot 3 : Motor 3
-        plt.subplot(413)
-        plt.plot(self.timeArray, pwm3)
-        plt.title('PWM3 over time')
-        plt.grid(True)
-
-        # Subplot 4 : Motor 4
-        plt.subplot(414)
-        plt.plot(self.timeArray, pwm4)
-        plt.title('PWM4 over time')
-        plt.grid(True)
-
-        plt.tight_layout()
-        plt.show()
 
     def plotMotorCurrent(self):
         mc = [nav.getMotorCurrents() for nav in self.navdataArray]
@@ -356,48 +260,44 @@ class FlightData:
         mc2 = [c[1] for c in mc]
         mc3 = [c[2] for c in mc]
         mc4 = [c[3] for c in mc]
-        print('\n---\nMC', mc)
+
+        self.plotSubplot(
+            n_plot=4,
+            x_data=self.timeArray,
+            y_data=[mc1,mc2,mc3,mc4],
+            title=['MC1','MC2','MC3','MC4']
+        )
+
+
+    def plotSubplot(self, n_plot, x_data, y_data, title, grid=True, layout=None):
+        if layout == None:
+            subplt_num = (n_plot*100) + 11
+        else:
+            subplt_num = layout
+            
+        for p_num in range(n_plot):
+            print(subplt_num + p_num)
+            plt.subplot(subplt_num + p_num)
+            plt.plot(x_data, y_data[0])
+            plt.title(title[0])
+            plt.grid(True)
         
-        # Subplot 1 : Motor 1
-        plt.subplot(411)
-        plt.plot(self.timeArray, mc1)
-        plt.title('MC1 over time')
-        plt.grid(True)
-
-        # Subplot 2 : Motor 2
-        plt.subplot(412)
-        plt.plot(self.timeArray, mc2)
-        plt.title('MC2 over time')
-        plt.grid(True)
-
-        # Subplot 3 : Motor 3
-        plt.subplot(413)
-        plt.plot(self.timeArray, mc3)
-        plt.title('MC3 over time')
-        plt.grid(True)
-
-        # Subplot 4 : Motor 4
-        plt.subplot(414)
-        plt.plot(self.timeArray, mc4)
-        plt.title('MC4 over time')
-        plt.grid(True)
-
         plt.tight_layout()
         plt.show()
 
 
 if __name__ == '__main__':
     # Ascent
-    FD = FlightData('C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone/nodejs/flight-data/jul_6/flight_1594006229371.json')
+    FD = FlightData('/home/stoorm/github/ta-shop/source/ardrone/nodejs/flight-data/jul_6/flight_1594006229371.json')
     
     print('Processing Flight Data with {} points'.format(len(FD.navdataArray)))
     print('Battery Percentage:',FD.navdataArray[0].getBatteryPercentage())
-    FD.plot('deg')
+    FD.plotOrientationVelocity('deg')
     #FD.plotAltitude()
     #FD.plotTrajectory()
     #FD.plotTimeDelta()
     #FD.plotTranslationAscent()
     #FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
-    FD.plotTranslationAscent2D()
+    #FD.plotTranslationAscent2D()
     FD.plotPWM()
     FD.plotMotorCurrent()

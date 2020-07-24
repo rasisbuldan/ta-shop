@@ -97,6 +97,6 @@ def getJSONArray(filename):
     return dataArray
 
 if __name__ == '__main__':
-    flightDataRaw = getJSONArray('C:\\Users\\rss75\\Documents\\GitHub\\ta-shop\\source\\ardrone\\nodejs\\flight-data\\data-new-1.json')
+    flightDataRaw = getJSONArray('/home/stoorm/github/ta-shop/source/ardrone/nodejs/flight-data/flight_1593945457322.json')
     print('Flight data recorded {} steps'.format(len(flightDataRaw)))
-    print(json.dumps(flightDataRaw[0], indent=2))
+    print(json.dumps(flightDataRaw[len(flightDataRaw)//2], indent=2))
