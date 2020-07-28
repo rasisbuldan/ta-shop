@@ -430,10 +430,10 @@ class StaticData:
 
 if __name__ == "__main__":
     Dataset = StaticData(data_dir='C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-data', data_type='accel-sweep')
-    Dataset.loadDataset(data_key=['vibration'], feature_key=['rms','kurtosis','skewness'])
-    Dataset.saveFeatureData(filename=('static_sweep_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
-    #Dataset.loadFeatureData(filename='static_sweep_20_07_21_00_50_02.pkl')
+    #Dataset.loadDataset(data_key=['vibration'], feature_key=['rms','kurtosis','skewness'])
+    #Dataset.saveFeatureData(filename=('static_sweep_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
+    Dataset.loadFeatureData(filename='static_sweep_20_07_21_00_57_25.pkl')
     #print(Dataset.featureData)
     #Dataset.plotSimple(data_key='vibration', feature_key='rms')
     #Dataset.plotSimple(data_key='power', feature_key='rms')
-    #Dataset.plotSweep(feature_key='rms')
+    Dataset.plotSweep(feature_key='rms')

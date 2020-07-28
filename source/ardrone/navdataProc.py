@@ -13,6 +13,7 @@ class NavData:
     Add more navdata,
         - raw accelerometer processing
     '''
+    
     def __init__(self, data):
         self.navdata = data
 
@@ -41,6 +42,9 @@ class NavData:
     def getTimeDelta(self):
         return self.navdata['timeDelta']
 
+    def getTimestamp(self):
+        return self.navdata['timestamp']
+
     def getAltitude(self):
         return self.navdata['demo']['altitude']
 
@@ -52,7 +56,10 @@ class NavData:
         return [x_trans, y_trans, z_trans]
 
     def getMotorPWM(self):
-        return self.navdata['pwm']['motors']
+        try:
+            return self.navdata['pwm']['motors']
+        except:
+            return [0,0,0,0]
         
     def getSatMotors(self):
         return self.navdata['pwm']['satMotors']
@@ -62,10 +69,30 @@ class NavData:
 
 
 class FlightData:
-    def __init__(self, filename):
-        self.navdataArray = [NavData(n) for n in getJSONArray(filename)]
-        self.timeDeltaArray = [nav.getTimeDelta() for nav in self.navdataArray]
-        self.timeArray = np.cumsum(self.timeDeltaArray)
+    def __init__(self, filename, filetype='new'):
+        self.filetype = filetype
+
+        if self.filetype == 'old':
+            self.navdataArray = [NavData(n) for n in getJSONArray(filename)]
+            self.timeDeltaArray = [nav.getTimeDelta() for nav in self.navdataArray]
+            self.timeArray = np.cumsum(self.timeDeltaArray)
+
+        elif self.filetype == 'new':
+            self.navdataArray = [NavData(n) for n in getJSONArray(filename)]
+            self.timeraw = [nav.getTimestamp() for nav in self.navdataArray]
+
+            # Calculate timestamp
+            t0 = self.timeraw[0]
+            self.timeArray = []
+            for t in self.timeraw:
+                self.timeArray.append(t - t0)
+
+            # Calculate timedelta
+            t0 = self.timeArray[0]
+            self.timeDeltaArray = []
+            for t in self.timeArray:
+                self.timeDeltaArray.append(t - t0)
+                t0 = t
     
 
     def plotTimeDelta(self):
@@ -245,6 +272,7 @@ class FlightData:
         pwm2 = [p[1] for p in pwm]
         pwm3 = [p[2] for p in pwm]
         pwm4 = [p[3] for p in pwm]
+        print([(pwm1[i] - pwm2[i]) for i in range(len(pwm1))])
         
         self.plotSubplot(
             n_plot=4,
@@ -288,11 +316,11 @@ class FlightData:
 
 if __name__ == '__main__':
     # Ascent
-    FD = FlightData('/home/stoorm/github/ta-shop/source/ardrone/nodejs/flight-data/jul_6/flight_1594006229371.json')
+    FD = FlightData('D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_28/flight_new_1595916173725_hover30s_4.json')
     
     print('Processing Flight Data with {} points'.format(len(FD.navdataArray)))
     print('Battery Percentage:',FD.navdataArray[0].getBatteryPercentage())
-    FD.plotOrientationVelocity('deg')
+    #FD.plotOrientationVelocity('deg')
     #FD.plotAltitude()
     #FD.plotTrajectory()
     #FD.plotTimeDelta()
@@ -300,4 +328,4 @@ if __name__ == '__main__':
     #FD.plotTranslationAnim(n_data=len(FD.navdataArray)-20)
     #FD.plotTranslationAscent2D()
     FD.plotPWM()
-    FD.plotMotorCurrent()
+    #FD.plotMotorCurrent()

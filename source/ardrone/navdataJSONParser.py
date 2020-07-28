@@ -78,13 +78,6 @@ Structure:
 import numpy as np
 import json
 
-class NavData:
-    def __init__(self, navdata):
-        self.header = navdata['demo']
-        
-        self.demo = navdata['demo']
-        self.demo.batteryPercentage = self.demo['batteryPercentage']
-
 def getDataFromFile(filename):
     with open(filename) as file:
         fileContents = file.read()
@@ -97,6 +90,6 @@ def getJSONArray(filename):
     return dataArray
 
 if __name__ == '__main__':
-    flightDataRaw = getJSONArray('/home/stoorm/github/ta-shop/source/ardrone/nodejs/flight-data/flight_1593945457322.json')
+    flightDataRaw = getJSONArray('D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_28/to_db/flight_new_1595914928926_hover_spin.json')
     print('Flight data recorded {} steps'.format(len(flightDataRaw)))
-    print(json.dumps(flightDataRaw[len(flightDataRaw)//2], indent=2))
+    print(json.dumps(flightDataRaw[0]['droneState'], indent=2))
