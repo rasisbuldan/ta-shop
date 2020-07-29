@@ -10,7 +10,7 @@ import os
 import traceback
 
 ### Variable ###
-data_path = 'D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_28/to_db'
+data_path = 'D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_29/attempt2/to_db'
 
 dataTemplate = {
     "description": "",
@@ -53,6 +53,9 @@ def getDirectoryList(data_dir):
     return [f for f in os.listdir(data_dir)]
 
 def loadDataset(filename):
+    if filename == 'desktop.ini':
+        return
+
     # Filename parse
     fn = filename.split("_")
     timestart = int(fn[2].replace('.json',''))

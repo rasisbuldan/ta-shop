@@ -8,14 +8,13 @@ import math
 import json
 
 mpuData = {
+    "timestamp": 0,
     "mpu1": {
-        "timeDelta": 0,
         "x": 0,
         "y": 0,
         "z": 0
     },
     "mpu2": {
-        "timeDelta": 0,
         "x": 0,
         "y": 0,
         "z": 0
@@ -157,10 +156,6 @@ class MPU6050:
         self.z_offset = np.average(avg_array[2])
 
     def get_accel_data(self):
-        # Store start time (in nanoseconds)
-        time_start = time.clock_gettime_ns(time.CLOCK_REALTIME)
-        time_prev  = time_start
-
         # FIFO overflow
         if self.fifo_count() >= 1024:
             # Reset FIFO
@@ -173,14 +168,13 @@ class MPU6050:
         # temp = self.read_raw_data(REG_TEMP_OUT_H) / -100
 
         # Measure time period
-        time_delta = time.clock_gettime_ns(time.CLOCK_REALTIME) - time_prev
-        time_prev = time.clock_gettime_ns(time.CLOCK_REALTIME)
+        timestamp = time.clock_gettime_ns(time.CLOCK_REALTIME)
 
         if self.verbose:
             print('addr: {} \t time: {}ms \t x: {}g \t y: {}g \t z: {}g'.format(
                     hex(self.MPU6050_I2C_ADDR), time_delta / 1000000, accel_x, accel_y, accel_z))
 
-        return (time_delta, accel_x, accel_y, accel_z)
+        return (timestamp, accel_x, accel_y, accel_z)
 
 def on_connect(client, userdata, flags, rc):
     print("Connection: ", rc)
@@ -191,6 +185,7 @@ def on_message(client, userdata, msg):
     print('Rcv message on', msg.topic, ':', str(msg.payload))
 
 if __name__ == '__main__':
+    print('Starting vibration measurement')
     # Initialize MQTT connection
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -198,30 +193,36 @@ if __name__ == '__main__':
     client.enable_logger() #logger=None
 
     # Connect to broker
-    client.connect('192.168.0.118', port=1884, keepalive=1800)
+    client.connect('192.168.0.139', port=1884, keepalive=1800)
 
-    mpu1 = MPU6050(i2c_addr=0x68, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
-    #mpu2 = MPU6050(i2c_addr=0x69, g_range='4g', sample_rate=1000, accel_ms=1, temp_ms=1)
-    mpu1.reset_offset()
+    mpu1 = MPU6050(i2c_addr=0x68, g_range='8g', sample_rate=1000, accel_ms=1, temp_ms=1)
+    mpu2 = MPU6050(i2c_addr=0x69, g_range='8g', sample_rate=1000, accel_ms=1, temp_ms=1)
+    #mpu1.reset_offset()
     #mpu2.reset_offset()
     time.sleep(2)
 
+    i = 0
     while True:
-        accel1 = mpu1.get_accel_data()
-        #accel2 = mpu2.get_accel_data()
+        i += 1
+        print('Measurement no.', i, end='\r')
+        try:
+            accel1 = mpu1.get_accel_data()
+            accel2 = mpu2.get_accel_data()
+        except:
+            print('Error occured!')
         #accel_delta = [(accel1[i] - accel2[i]) for i in range(len(accel1))]
 
         # mpu1
-        mpuData["mpu1"]["timeDelta"] = accel1[0]
+        mpuData["mpu1"]["timestamp"] = accel1[0]
         mpuData["mpu1"]["x"] = accel1[1]
         mpuData["mpu1"]["y"] = accel1[2]
         mpuData["mpu1"]["z"] = accel1[3]
 
         # mpu2
-        #mpuData["mpu2"]["timeDelta"] = accel2[0]
-        #mpuData["mpu2"]["x"] = accel2[1]
-        #mpuData["mpu2"]["y"] = accel2[2]
-        #mpuData["mpu2"]["z"] = accel2[3]
+        mpuData["mpu2"]["timestamp"] = accel2[0]
+        mpuData["mpu2"]["x"] = accel2[1]
+        mpuData["mpu2"]["y"] = accel2[2]
+        mpuData["mpu2"]["z"] = accel2[3]
 
         # Convert to JSON
         payload = json.dumps(mpuData)
