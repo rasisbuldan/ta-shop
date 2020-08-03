@@ -13,6 +13,7 @@ import pickle
 import traceback
 import sys
 import scipy.stats
+import pandas as pd
 
 class Vibration:
     def __init__(self, filename):
@@ -207,6 +208,7 @@ class StaticData:
                 'numberOfData': 0,
                 'vibration': {
                     'throttle': [],
+                    'filename': [],
                     'rms': {
                         'x': [],
                         'y': [],
@@ -239,26 +241,32 @@ class StaticData:
 
     ## File Traversal ##
     def listFiles(self, dir):
-        return [f for f in os.listdir(dir) if 'accel' in f]
+        return sorted([f for f in os.listdir(dir) if 'accel' in f])
     
-    def addDataPoint(self, filename, data_key, feature_key):
+    def addDataPoint(self, filenames, data_key, feature_key):
         def rms(array):
             return math.sqrt(np.mean(np.square(array)))
 
-
+        # Vibration data point
         if 'vibration' in data_key:
             if self.data_type == 'accel-power-cont':
-                vib = Vibration(self.data_dir + '/' + self.accel_dir + '/' + filename)
+                vibArray = []
+                for filename in filenames:
+                    vibArray.append(Vibration(self.data_dir + '/' + self.accel_dir + '/' + filename))
             elif self.data_type == 'accel-sweep':
                 vib = Vibration(self.data_dir + '/' + filename)
-            
-            vibRaw = vib.getAccel()
-            plt.plot(list(range(len(vibRaw[0]))), vibRaw[0])
-            plt.show()
+
+            # Vibration rawdata aggregation per minute
+            vibRawAgg = [[],[],[]]
+            for vib in vibArray:
+                vibRaw = vib.getAccel()
+                vibRawAgg[0] = np.append(vibRawAgg[0], vibRaw[0], axis=0)
+                vibRawAgg[1] = np.append(vibRawAgg[1], vibRaw[1], axis=0)
+                vibRawAgg[2] = np.append(vibRawAgg[2], vibRaw[2], axis=0)
 
             # Horizontal Axis data
             if self.data_type == 'accel-power-cont':
-                self.featureData['vibration']['measuretime'].append(vib.getMeasureTime())
+                self.featureData['vibration']['measuretime'].append(filenames[0][-27:])
             elif self.data_type == 'accel-sweep':
                 self.featureData['vibration']['throttle'].append(vib.getThrottleValue())
 
@@ -278,16 +286,17 @@ class StaticData:
                 self.featureData['vibration']['skewness']['y'].append(scipy.stats.skew(vibRaw[1]))
                 self.featureData['vibration']['skewness']['z'].append(scipy.stats.skew(vibRaw[2]))
             
-            if 'crest' in feature_key:
-                self.featureData['vibration']['skewness']['x'].append(max(vibRaw[0])/rms(vibRaw[0]))
-                self.featureData['vibration']['skewness']['y'].append(max(vibRaw[1])/rms(vibRaw[1]))
-                self.featureData['vibration']['skewness']['z'].append(max(vibRaw[2])/rms(vibRaw[2]))
+            if 'crest-factor' in feature_key:
+                self.featureData['vibration']['crest-factor']['x'].append(max(vibRaw[0])/rms(vibRaw[0]))
+                self.featureData['vibration']['crest-factor']['y'].append(max(vibRaw[1])/rms(vibRaw[1]))
+                self.featureData['vibration']['crest-factor']['z'].append(max(vibRaw[2])/rms(vibRaw[2]))
             
-            if 'p2p' in feature_key:
-                self.featureData['vibration']['skewness']['x'].append(max(vibRaw[0]) - min(vibRaw[0]))
-                self.featureData['vibration']['skewness']['y'].append(max(vibRaw[1]) - min(vibRaw[1]))
-                self.featureData['vibration']['skewness']['z'].append(max(vibRaw[2]) - min(vibRaw[2]))
+            if 'peak-to-peak' in feature_key:
+                self.featureData['vibration']['peak-to-peak']['x'].append(max(vibRaw[0]) - min(vibRaw[0]))
+                self.featureData['vibration']['peak-to-peak']['y'].append(max(vibRaw[1]) - min(vibRaw[1]))
+                self.featureData['vibration']['peak-to-peak']['z'].append(max(vibRaw[2]) - min(vibRaw[2]))
         
+        # Power data point
         if 'power' in data_key:
             vi = Power(self.data_dir + '/' + self.power_dir + '/' + filename)
             powerRaw = vi.getPower()
@@ -320,25 +329,38 @@ class StaticData:
             self.numberOfFiles[key] = len(self.unprocessedFiles[key])
             
             stepSize = self.numberOfFiles[key] // 40
-            filenum = 0
             
             # File traversal for specific data key
             while len(self.unprocessedFiles[key]) > 0:
-                filenum += 1
-                step = filenum // stepSize
+                filenum = len(self.processedFiles[key])
+                step = int((filenum/self.numberOfFiles[key])*40)
                 print('Loading dataset', key, '[' + '#' * step + '-' * (40-step) + ']', '{:.1f}%'.format(filenum/self.numberOfFiles[key]*100), end='\r')
 
-                # Pop from unprocessed files list
-                f = self.unprocessedFiles[key].pop(0)
+                # Reset filename array
+                fArr = []
+                
+                # Extract minute from unprocessed filename
+                f = self.unprocessedFiles[key][0]
+                minuteCursor = f.split('_')[-3]
+
+                # Add to fArr if file minutes is same
+                while(f.split('_')[-3] == minuteCursor and len(self.unprocessedFiles[key]) > 0):
+                    fArr.append(self.unprocessedFiles[key].pop(0))
+                    minuteCursor = f.split('_')[-3]
+                    
+                    # No unprocessed files left
+                    if len(self.unprocessedFiles[key]) > 0:
+                        f = self.unprocessedFiles[key][0]
                 
                 try:
                     # Extract data from file
-                    self.addDataPoint(filename=f, data_key=key, feature_key=feature_key)
+                    self.addDataPoint(filenames=fArr, data_key=key, feature_key=feature_key)
                 
                 except ValueError:
                     timeException = datetime.now().strftime('%y_%m_%d_%H_%M_%S')
                     print('\nValueError on', f, 'at', timeException)
                     self.featureData['error'].append(('ValueError', key, f, timeException, len(self.processedFiles[key])))
+                    traceback.print_exc()
 
                 except IndexError:
                     timeException = datetime.now().strftime('%y_%m_%d_%H_%M_%S')
@@ -350,13 +372,14 @@ class StaticData:
                 
                 except:
                     timeException = datetime.now().strftime('%y_%m_%d_%H_%M_%S')
-                    self.saveFeatureData(filename=('static_' + timeException + '.pkl'))
-                    print('\nException Occured on', timeException)
-                    print('----------------------------------')
-                    traceback.print_exc()
+                    #self.saveFeatureData(filename=('static_' + timeException + '.pkl'))
+                    #print('\nException Occured on', timeException)
+                    #print('----------------------------------')
+                    #traceback.print_exc()
 
                 # Add to processed files list
-                self.processedFiles[key].append(f)
+                for f in fArr:
+                    self.processedFiles[key].append(f)
 
     ## Feature data from/to file ##
     def saveFeatureData(self, filename):
@@ -369,6 +392,42 @@ class StaticData:
         print('\nLoading feature data from', filename)
         with open(filename, 'rb') as f:
             self.featureData = pickle.load(f)
+
+    def saveToCSVPandas(self):
+        feats = pd.DataFrame(columns=['Skx','Sky','RMSx','RMSy','Kx','Ky','CFx','CFy','P2Px','P2Py','filename'])
+        #for i in range(len(self.featureData['vibration']['filename'])):
+        feats.append({
+            'Skx': self.featureData['vibration']['skewness']['x'],
+            'Sky': self.featureData['vibration']['skewness']['y'],
+            'RMSx': self.featureData['vibration']['rms']['x'],
+            'RMSy': self.featureData['vibration']['rms']['y'],
+            'Kx': self.featureData['vibration']['kurtosis']['x'],
+            'Ky': self.featureData['vibration']['kurtosis']['y'],
+            'CFx': self.featureData['vibration']['crest-factor']['x'],
+            'CFy': self.featureData['vibration']['crest-factor']['y'],
+            'P2Px': self.featureData['vibration']['peak-to-peak']['x'],
+            'P2Py': self.featureData['vibration']['peak-to-peak']['y']
+        }, ignore_index=True)
+        print(feats.head())
+
+    def saveToCSV(self):
+        label = ',Skx,Sky,RMSx,RMSy,Kx,Ky,CFx,CFy,P2Px,P2Py,filename'
+        dim = len(self.featureData['vibration']['rms']['x'])
+        saveArr = np.array(list(range(21110,21110+dim))).reshape(dim,1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['skewness']['x']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['skewness']['y']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['rms']['x']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['rms']['y']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['kurtosis']['x']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['kurtosis']['y']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['crest-factor']['x']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['crest-factor']['y']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['peak-to-peak']['x']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['peak-to-peak']['y']).reshape(dim,1), axis=1)
+        saveArr = np.append(saveArr, np.array(self.featureData['vibration']['measuretime']).reshape(dim,1), axis=1)
+
+        print('\n',saveArr.shape)
+        np.savetxt('testcsv.csv', saveArr, fmt='%s', delimiter=',', header=label)
     
 
     ## Feature data processing demo ##
@@ -489,11 +548,12 @@ class StaticData:
 
 if __name__ == "__main__":
     Dataset = StaticData(data_dir='D:/Cloud/Google Drive/Tugas Akhir/data/accel-vi-data-cont/', data_type='accel-power-cont')
-    Dataset.loadDataset(data_key=['vibration'], feature_key=['rms','kurtosis','skewness','crest','p2p'])
-    #Dataset.saveFeatureData(filename=('static_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
-    Dataset.loadFeatureData(filename='static_20_07_19_00_17_09.pkl')
+    Dataset.loadDataset(data_key=['vibration'], feature_key=['rms','kurtosis','skewness','crest-factor','peak-to-peak'])
+    Dataset.saveFeatureData(filename=('static_agg_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
+    Dataset.saveToCSV()
+    #Dataset.loadFeatureData(filename='static_20_07_19_00_17_09.pkl')
     #print(Dataset.featureData)
-    Dataset.plotSimple(data_key='vibration', feature_key='rms')
+    #Dataset.plotSimple(data_key='vibration', feature_key='rms')
 
     #Dataset.plotSimple(data_key='power', feature_key='rms')
     #Dataset.plotSweep(feature_key='rms')
