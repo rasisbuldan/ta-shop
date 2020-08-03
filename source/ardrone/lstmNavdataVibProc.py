@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 from random import random, randint, seed
+import time
 
 # LSTM
 from keras.models import Sequential
@@ -18,16 +19,16 @@ stepWeight = 0.1
 windowSize = 200
 weight = np.arange(stepWeight, stepWeight*(windowSize+1), stepWeight)
 discardDesc = ["jul29_up_down_02.json"]
-filterDesc = ['jul29']
+filterDesc = ['jul29'] # 'jul29'
 
 ### Dataset split ###
 nTrain = 10
 nTest = 3
-trainDataset = np.empty((0,4))
-testDataset = np.empty((0,4))
+trainDataset = np.empty((0,2,1))
+testDataset = np.empty((0,2,1))
 
 # Reproducibility
-seed(1234)
+seed(int(time.time()))
 
 ### Get Dataset ###
 # Vibibibhelofrenaijeswantutelyudetaiemsopritiihiqtengkyu:>
@@ -120,7 +121,7 @@ for n in range(nTest):
     for data in popData:
         testDataset = np.append(
             arr=testDataset,
-            values=np.array([data[1][0], data[2][0], data[2][1], data[2][2]]).reshape(1,4),
+            values=np.array([[data[1][0]], [data[2][0]]]).reshape(1,2,1),
             axis=0    
         )
 
@@ -129,7 +130,7 @@ for dataset in datasetCombined:
     for data in dataset:
         trainDataset = np.append(
             arr=trainDataset,
-            values=np.array([data[1][0], data[2][0], data[2][1], data[2][2]]).reshape(1,4),
+            values=np.array([[data[1][0]], [data[2][0]]]).reshape(1,2,1),
             axis=0    
         )
 
@@ -145,33 +146,87 @@ print(testDataset[:10])
 
 ### Plot splitted dataset
 # Train dataset
-plt.figure()
+""" plt.figure()
 plt.title('Train dataset')
 plt.ylim(-10,270)
 plt.tight_layout()
-for plotNum in range(0,4):
+for plotNum in range(0,2):
     plt.plot(
         list(range(len(trainDataset))),
         trainDataset[:,plotNum],
         linewidth=0.8,
         color='C' + str(plotNum)
-    )
+    ) """
 
 # Test dataset
-plt.figure()
+""" plt.figure()
 plt.title('Test dataset')
 plt.ylim(-10,270)
 plt.tight_layout()
-for plotNum in range(0,4):
+for plotNum in range(0,2):
     plt.plot(
         list(range(len(testDataset))),
         testDataset[:,plotNum],
         linewidth=0.8,
         color='C' + str(plotNum)
-    )
+    ) """
 
-plt.show()
-
+""" plt.show() """
 
 # Terminate here
-sys.exit()
+""" sys.exit() """
+
+
+##### LSTM #####
+# Parameter
+nSteps = 10
+nFeature = 1
+
+# Function - helper
+def splitSequences(array, n_steps):
+    seqArray = []
+    for i in range(len(array)-(n_steps-1)):
+        seq = array[i:i+n_steps]
+        seqArray.append(seq)
+
+    return seqArray
+
+
+### Data step sequence
+trainX = np.array(splitSequences(trainDataset[:,0], nSteps))
+trainY = trainDataset[nSteps-1:,1]
+testX = np.array(splitSequences(testDataset[:,0], nSteps))
+testY = testDataset[nSteps-1:,1]
+print('Train dataset: ', trainX.shape, trainY.shape)
+print('Test dataset: ', testX.shape, testY.shape)
+
+# Create model
+model = Sequential()
+model.add(LSTM(128, activation='relu', input_shape=(nSteps,nFeature)))
+model.add(Dense(1))
+
+# Print summary of model
+model.summary()
+
+# Compile model
+#model.compile(optimizer='adam', loss='cosine_similarity')
+model.compile(optimizer='adam', loss='mean_absolute_error')
+
+# Model fitting
+model.fit(trainX, trainY, epochs=20, verbose=0)
+#model.fit(trainX, trainY, validation_data=(testX,testY), epochs=100, verbose=1)
+
+# Predict
+predArray = []
+
+for i in range(testX.shape[0]):
+    testOutput = model.predict(np.array(testX[i,:,:]).reshape(1,nSteps,1), verbose=0)
+    predArray.append(float(testOutput))
+
+print('Prediction array:', len(predArray))
+#print(predArray)
+
+plt.plot(list(range(len(predArray))), predArray, color='C0')
+plt.plot(list(range(len(testY))), testY, color='C3')
+plt.grid(True)
+plt.show()
