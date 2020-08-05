@@ -27,7 +27,7 @@ void setup() {
 }
 
 void loop() {
-    random_val = random(3,7) * 100;
+    random_val = random(30,90) * 10;
     
     /* Ascend to setpoint */
     for (long i = 1; i < 5; i++) {
@@ -66,7 +66,13 @@ void loop() {
     }
 
     esc1.setThrottle(48);
-    for (long i = 0; i < 400; i++) {
+    for (long i = 0; i < 300; i++) {
+        Serial.println(48);
+        delay(5);  
+    }
+    Serial.println("5000");
+    delay(5);
+    for (long i = 0; i < 300; i++) {
         Serial.println(48);
         delay(5);  
     }

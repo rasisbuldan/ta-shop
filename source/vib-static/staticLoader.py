@@ -10,7 +10,7 @@ import os
 import traceback
 
 ### Variable ###
-data_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/data/static_pwm_to_db_aug5'
+data_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/data/static_pwm_to_db_aug5/v2'
 
 dataTemplate = {
     "description": "",
@@ -45,31 +45,35 @@ def loadDataset(filename):
 
     # Load raw navdata from file
     rawData = getDataFromFile(data_path + '/' + filename)
-
-    # Load file-related values
-    dataFileTemplate = dataTemplate.copy()
-    dataFileTemplate['description'] = desc
-    dataFileTemplate['timestart'] = timestart
     
     # Populate template with value from file
     i = 0
+    timestartBatch = timestart
+    batchNum = 0
     rawDataLength = len(rawData)
+
     for data in rawData:
-        i += 1
-        print('Loading [{}/{}] {:.1f}%'.format(i, rawDataLength, i/rawDataLength*100), end='\r')
-        try:
-            payload = dataFileTemplate.copy()
-            payload['timestamp'] = int(data[0])
-            payload['pwm'] = int(data[1])
+        if data[1] == 5000:
+            batchNum += 1
+            timestartBatch = int(data[0])
+        else:
+            i += 1
+            print('Loading [{}/{}] {:.1f}%'.format(i, rawDataLength, i/rawDataLength*100), end='\r')
+            try:
+                payload = dataTemplate.copy()
+                payload['description'] = desc + '_' + str(batchNum)
+                payload['timestart'] = timestartBatch
+                payload['timestamp'] = int(data[0])
+                payload['pwm'] = int(data[1])
 
-        
-        except Exception as e:
-            print('Data:', data)
-            traceback.print_exc()
-            sys.exit()
+            
+            except Exception as e:
+                print('Data:', data)
+                traceback.print_exc()
+                sys.exit()
 
-        # Insert into MongoDB
-        idNum = staticpwmCollection.insert_one(payload)
+            # Insert into MongoDB
+            idNum = staticpwmCollection.insert_one(payload)
     
     print('Load {} with {} data points complete!'.format(filename, i))
 
@@ -77,7 +81,7 @@ def loadDataset(filename):
 ### Main ###
 # MongoDB Connector
 clientDB = pymongo.MongoClient("localhost", 27017)
-staticpwmCollection = clientDB['test-db']['staticpwms']
+staticpwmCollection = clientDB['test-db']['staticpwm2s']
 
 dirlist = getDirectoryList(data_path)
 for file in dirlist:

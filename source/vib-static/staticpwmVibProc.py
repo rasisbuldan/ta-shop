@@ -17,7 +17,7 @@ import sys
 
 
 class VibData:
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, offset=0):
         """
         [DOCUMENT TEMPLATE]
         {
@@ -35,6 +35,7 @@ class VibData:
         }
         """
         self.verbose = verbose
+        self.offset = offset
 
         self.initializeConnectionDB()
         self.activeDataArray = []
@@ -81,13 +82,16 @@ class VibData:
 
 
     ##### Query #####
-    def storeData(self, data_array, description):
+    def storeData(self, data_array, description, trim=None):
         '''
             Store queried document(s) result to class attribute (main memory)
             for further processing without db query
             
             return: activeDataArray index (id) of queried result
         '''
+
+        if trim != None:
+            data_array = data_array[trim[0]:trim[1]]
 
         self.activeDataArray.append({
             'desc': description,
@@ -125,9 +129,13 @@ class VibData:
     def getBetweenTimestamp(self, lower, upper):
         ''' Get document(s) as list of object with specified timestamp boundary '''
 
-        #print('[lower] {} [upper] {}'.format(lower,upper))
+
+
         return list(self.vibCollection.find({
-            "timestamp": { "$gte": lower, "$lte": upper }
+            "timestamp": { 
+                "$gte": lower - self.offset,
+                "$lte": upper - self.offset
+            }
         }))
 
 
@@ -140,8 +148,9 @@ class VibData:
     ### Timestamp Array
     def getTimestampArray(self, active_id):
         ''' Get timestamp array of stored documents with index *active_id* '''
+    
 
-        timestampArray = [int(obj['timestamp']) for obj in self.activeDataArray[active_id]['data']]
+        timestampArray = [int(obj['timestamp'])+self.offset for obj in self.activeDataArray[active_id]['data']]
         return timestampArray
 
 
@@ -418,7 +427,7 @@ class StaticPWMData:
         ''' Connect to database with default localhost '''
         self.clientDB = pymongo.MongoClient(host, port)
 
-        self.pwmCollection = self.clientDB['test-db']['staticpwms']
+        self.pwmCollection = self.clientDB['test-db']['staticpwm2s']
         if self.verbose:
             print('Connection to test-db.staticpwms successful with', self.numOfDocuments(), 'documents')
 
@@ -445,13 +454,16 @@ class StaticPWMData:
 
 
     ##### Query #####
-    def storeData(self, data_array, description):
+    def storeData(self, data_array, description, trim=None):
         '''
             Store queried document(s) result to class attribute (main memory)
             for further processing without db query
             
             return: activeDataArray index (id) of queried result
         '''
+
+        if trim != None:
+            data_array = data_array[trim[0]:trim[1]]
 
         self.activeDataArray.append({
             'desc': description,
@@ -737,7 +749,131 @@ class StaticPWMData:
 class StaticVibData:
     def __init__(self, verbose=False):
         self.verbose = verbose
+
+
+    def combineArray(self, pwmdata, vibdata):
+        '''
+            Combine based on smallest timestamp delta
+            (Currently pwmdata to match vibdata timestamp)
+
+            Input format:
+            pwmdata = [[timestamp,...], [pwm,...]]
+            vibdata = [[timestamp,...], [[vib.x,...],...]]
+
+            Return format:
+            [timestamp, pwm, vibx, viby, vibz]
+        '''
+
+        tsPWM = pwmdata[0]
+        tsVib = vibdata[0]
+        pwmArray = pwmdata[1]
+        vibArray = vibdata[1]
+
+        # Get average timestamp
+        tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
+        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+
+        if self.verbose:
+            print('Timestamp avg: {} | {}'.format(tsPWMAvg, tsVibAvg))
+
+        
+        # Interpolate PWM data into Vib data
+        if tsVibAvg < tsPWMAvg:
+            newPWMArray = []
+
+            for ts in tsVib:
+
+                # Vibration data traversal
+                i = len(tsPWM) - 1
+                while tsPWM[i] > ts:
+                    i -= 1
+                #print('idx:', i, end='\r')
+                
+                # Append inrange data into new pwm array
+                newPWMArray.append(pwmArray[i])
+
+        #print('Combined data result: {} | {}'.format(len(newPWMArray), len(tsVib)))
+        
+        combinedArray = []
+        for i in range(len(tsVib)):
+            combinedArray.append([
+                tsVib[i],
+                newPWMArray[i],
+                [
+                    vibArray[0][i],
+                    vibArray[1][i],
+                    vibArray[2][i]
+                ]
+            ])
+
+        #combinedArray = [tsVib, newPWMArray, *vibArray]
+        return combinedArray
+
     
+    def combineAggArray(self, pwmdata, vibdata, time_window):
+        '''
+            Combine based on smallest timestamp delta
+            (Currently pwmdata to match vibdata timestamp)
+
+            Input format:
+            pwmdata = [[timestamp,...], [pwm,...]]
+            vibdata = [[timestamp,...], [[vib.x,...],...]]
+
+            Return format:
+            [timestamp, pwm, vibx, viby, vibz]
+        '''
+
+        def rms(array):
+            return np.sqrt(np.mean(np.square(array)))
+
+        tsPWM = pwmdata[0]
+        tsVib = vibdata[0]
+        pwmArray = pwmdata[1]
+        vibArray = vibdata[1]
+
+        # Get average timestamp
+        tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
+        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+
+        if self.verbose:
+            print('Timestamp avg: {} | {}'.format(tsPWMAvg, tsVibAvg))
+
+        
+        # Interpolate PWM data into Vib data
+        if tsVibAvg < tsPWMAvg:
+            newPWMArray = []
+
+            for ts in tsVib:
+
+                # Vibration data traversal
+                i = len(tsPWM) - 1
+                while tsPWM[i] > ts:
+                    i -= 1
+                
+                # Append inrange data into new pwm array
+                newPWMArray.append(pwmArray[i])
+
+
+        # Aggregate traversal (time_window by number of samples)
+        aggArray = []
+        for i in range(0, len(tsVib)-time_window, time_window):
+            aggArray.append([
+                tsVib[i],
+                rms(newPWMArray[i:i+time_window]),
+                [
+                    rms(vibArray[0][i:i+time_window]),
+                    rms(vibArray[1][i:i+time_window]),
+                    rms(vibArray[2][i:i+time_window])
+                ]
+            ])
+        
+        return aggArray
+
+
+
+        #combinedArray = [tsVib, newPWMArray, *vibArray]
+        return combinedArray
+        
     
     def combineAggregatedArray(self, pwmdata_agg, vibdata_agg, time_window=None):
         '''
@@ -876,6 +1012,9 @@ class StaticVibData:
         if axis == None:
             axis = ['x','y','z']
 
+        pwmTrim = (0,40800)
+        vibTrim = (0,163000)
+
         # Timestamp
         timestampPWM = pwmdata[0]
         print(len(timestampPWM))
@@ -902,7 +1041,7 @@ class StaticVibData:
         ### Subplot 1 ###
 
         # PWM
-        p_pwm, = ax_pwm.plot(timestampPWM, pwmdata[1:], label='PWM1', color='C0', linewidth=1.5)
+        p_pwm, = ax_pwm.plot(timestampPWM[pwmTrim[0]:pwmTrim[1]], pwmdata[1:][pwmTrim[0]:pwmTrim[1]], label='PWM1', color='C0', linewidth=1.5)
         ax_pwm.set_ylabel('PWM Motor 1', color='C0')
         ax_pwm.set_ylim([0,1000])
         ax_pwm.set_xlim([tsMin, tsMax])
@@ -910,7 +1049,7 @@ class StaticVibData:
 
         # Vib - X
         if 'x' in axis:
-            p1_vib_x, = ax_vib_x.plot(timestampVib, vibdata[1], label='Vib1-X', color='C1', linewidth=0.5)
+            p1_vib_x, = ax_vib_x.plot(timestampVib[vibTrim[0]:vibTrim[1]], vibdata[1][vibTrim[0]:vibTrim[1]], label='Vib1-X', color='C1', linewidth=0.5)
             ax_vib_x.yaxis.tick_right()
             ax_vib_x.set_ylim([-16,16])
             ax_vib_x.set_xlim([tsMin, tsMax])
@@ -918,7 +1057,7 @@ class StaticVibData:
 
         # Vib - Y
         if 'y' in axis:
-            p1_vib_y, = ax_vib_y.plot(timestampVib, vibdata[2], label='Vib1-Y', color='C2', linewidth=0.5)
+            p1_vib_y, = ax_vib_y.plot(timestampVib[vibTrim[0]:vibTrim[1]], vibdata[2][vibTrim[0]:vibTrim[1]], label='Vib1-Y', color='C2', linewidth=0.5)
             ax_vib_y.yaxis.tick_right()
             ax_vib_y.set_ylim([-16,16])
             ax_vib_y.set_xlim([tsMin, tsMax])
@@ -926,7 +1065,7 @@ class StaticVibData:
 
         # Vib - Z
         if 'z' in axis:
-            p1_vib_z, = ax_vib_z.plot(timestampVib, vibdata[3], label='Vib1-Z', color='C3', linewidth=0.5)
+            p1_vib_z, = ax_vib_z.plot(timestampVib[vibTrim[0]:vibTrim[1]], vibdata[3][vibTrim[0]:vibTrim[1]], label='Vib1-Z', color='C3', linewidth=0.5)
             ax_vib_z.yaxis.tick_right()
             ax_vib_z.set_ylim([-16,16])
             ax_vib_z.set_xlim([tsMin, tsMax])
@@ -980,7 +1119,7 @@ class StaticVibData:
         if 'x' in axis:
             p_vib_x, = ax_vib_x.plot(timestampArray, mpuxArray, label='Vib-X', color='C1', linewidth=0.5)
             ax_vib_x.yaxis.tick_right()
-            ax_vib_x.set_ylim([-16,16])
+            ax_vib_x.set_ylim([0,16])
             ax_vib_x.set_xlim([tsMin, tsMax])
             ax_vib_x.set_xticks(np.arange(tsMin, tsMax, 20000))
 
@@ -988,7 +1127,7 @@ class StaticVibData:
         if 'y' in axis:
             p_vib_y, = ax_vib_y.plot(timestampArray, mpuyArray, label='Vib-Y', color='C2', linewidth=0.5)
             ax_vib_y.yaxis.tick_right()
-            ax_vib_y.set_ylim([-16,16])
+            ax_vib_y.set_ylim([0,16])
             ax_vib_y.set_xlim([tsMin, tsMax])
             ax_vib_y.set_xticks(np.arange(tsMin, tsMax, 20000))
 
@@ -996,7 +1135,7 @@ class StaticVibData:
         if 'z' in axis:
             p_vib_z, = ax_vib_z.plot(timestampArray, mpuzArray, label='Vib-Z', color='C3', linewidth=0.5)
             ax_vib_z.yaxis.tick_right()
-            ax_vib_z.set_ylim([-16,16])
+            ax_vib_z.set_ylim([0,16])
             ax_vib_z.set_xlim([tsMin, tsMax])
             ax_vib_z.set_xticks(np.arange(tsMin, tsMax, 20000))
 
@@ -1009,14 +1148,14 @@ class StaticVibData:
 ##### Driver #####
 if __name__ == '__main__':
     ### Parameter ###
-    queryDescription = 'step_clean_0_300_700_2000'
+    queryDescription = 'aug5_step_clean_0_300_900_3000_1_6'
     plotVibAxis = ['x','y','z']
     stepWeight = 0.1
-    windowSize = 50
+    windowSize = 10
     weight = np.arange(stepWeight, stepWeight*(windowSize+1), stepWeight)
 
     ### Object Declaration ###
-    Vib = VibData()
+    Vib = VibData(offset=-2375)
     Static = StaticPWMData()
 
     # List description
@@ -1042,20 +1181,33 @@ if __name__ == '__main__':
     """ Vib.plotDataMultiMovingRMS(Vib.getTimestampArray(desc_id_vib), Vib.getVibArray(desc_id_vib), 10) """
 
     SV = StaticVibData()
-
-    SV.getTimestampAnalysis(
-        pwmdata=[Static.getTimestampArray(desc_id_pwm)],
-        vibdata=[Vib.getTimestampArray(desc_id_vib)]
+    arrayCombined = SV.combineArray(
+        pwmdata=[Static.getTimestampArray(desc_id_pwm)] + [Static.getPWMArray(desc_id_pwm)],
+        vibdata=[Vib.getTimestampArray(desc_id_vib)] + [Vib.getVibArray(desc_id_vib)]
     )
 
     SV.plotPWMVibTimestamp(
-        pwmdata=[Static.getTimestampArray(desc_id_pwm)] + Static.getPWMArray(desc_id_pwm),
-        vibdata=[Vib.getTimestampArray(desc_id_vib)] + Vib.getVibArray(desc_id_vib)
+        pwmdata=[arrayCombined[0], *arrayCombined[1]],
+        vibdata=[arrayCombined[0], *arrayCombined[2:]]
     )
 
-    SV.plotPWMVibAggregated(
+    """ plt.plot(arrayCombined[0], arrayCombined[1])
+    plt.grid(True)
+    plt.show() """
+
+    """ SV.getTimestampAnalysis(
+        pwmdata=[Static.getTimestampArray(desc_id_pwm)],
+        vibdata=[Vib.getTimestampArray(desc_id_vib)]
+    ) """
+
+    """ SV.plotPWMVibTimestamp(
+        pwmdata=[Static.getTimestampArray(desc_id_pwm)] + Static.getPWMArray(desc_id_pwm),
+        vibdata=[Vib.getTimestampArray(desc_id_vib)] + Vib.getVibArray(desc_id_vib)
+    ) """
+
+    """ SV.plotPWMVibAggregated(
         pwmdata_agg=Static.getPWMAggregatedArray(desc_id_pwm, windowSize),
         vibdata_agg=Vib.getVibAggregatedArray(desc_id_vib, windowSize),
         axis=['x','y','z'],
         time_window=windowSize
-    )
+    ) """
