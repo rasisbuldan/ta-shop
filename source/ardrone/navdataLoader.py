@@ -10,7 +10,7 @@ import os
 import traceback
 
 ### Variable ###
-data_path = 'D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_29/attempt2/to_db'
+data_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone/nodejs/flight-data/aug_11'
 
 dataTemplate = {
     "description": "",
@@ -50,10 +50,14 @@ dataTemplate = {
 }
 
 def getDirectoryList(data_dir):
-    return [f for f in os.listdir(data_dir)]
+    return [f for f in os.listdir(data_dir) if '.json' in f]
 
 def loadDataset(filename):
     if filename == 'desktop.ini':
+        return
+
+    # Already stored in db
+    if '_'.join(filename.split('_')[3:]) in descListStored:
         return
 
     # Filename parse
@@ -128,5 +132,19 @@ clientDB = pymongo.MongoClient("localhost", 27017)
 navdataCollection = clientDB['test-db']['navdatas']
 
 dirlist = getDirectoryList(data_path)
-for file in dirlist:
-    loadDataset(file)
+descListLocal = ['_'.join(fname.split('_')[3:]) for fname in dirlist]
+descListStored = list(navdataCollection.distinct('description'))
+descDiff = [desc for desc in descListLocal if desc not in descListStored]
+
+print('Directory list')
+#print(*descListStored, sep='\n')
+#print('---------------')
+print(*dirlist, sep='\n')
+print('---------------')
+proceed = input('Proceed with dataset loading to DB? [y/n]: ')
+
+if proceed == 'y':
+    for file in dirlist:
+        loadDataset(file)
+else:
+    sys.exit()

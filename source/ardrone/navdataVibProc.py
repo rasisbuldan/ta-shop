@@ -8,12 +8,13 @@
 '''
 
 
-from navdataProc import NavData, FlightData
 import pymongo
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 import collections
+import scipy.stats
+import sys
 
 
 class VibData:
@@ -144,6 +145,16 @@ class VibData:
         timestampArray = [int(obj['timestamp']) for obj in self.activeDataArray[active_id]['data']]
         return timestampArray
 
+    
+    def getTimestampDeltaArray(self, active_id):
+        ''' Get timestamp delta array of stored documents with index *active_id* '''
+
+        tsArray = self.getTimestampArray(active_id)
+
+        tdArray = [(tsArray[i] - tsArray[i-1]) for i in range(len(tsArray))]
+        return tdArray
+
+
 
     def getTimestampFilledArray(self, active_id):
         ''' 
@@ -211,6 +222,39 @@ class VibData:
         return vibArray
 
     
+    def getMultiFeatureArray(self, active_id):
+        '''
+            Aggregated array with window *time_window*
+
+            return: list of dict
+            {
+                timestamp
+                rms: [mpu1.x,...,mpu2.z],
+                kurtosis: [mpu1.x,...,mpu2.z],
+                skewness: [mpu1.x,...,mpu2.z],
+                crest-factor: [mpu1.x,...,mpu2.z],
+                peak-to-peak: [mpu1.x,...,mpu2.z]
+            }
+        '''
+
+        # Extract data
+        activeData = self.activeDataArray[active_id]['data']
+
+        multiFeatureArray = []
+
+        # Aggregation loop
+        for data in activeData:
+            featureData = {
+                'timestamp': data['timestamp'],
+                'mpu1': [a[1] for a in data['mpu1'].items()],
+                'mpu2': [a[1] for a in data['mpu2'].items()]
+            }
+
+            multiFeatureArray.append(featureData)
+
+        return multiFeatureArray
+
+    
     def getVibAggregatedArray(self, active_id, time_window):
         '''
             Aggregated array with window *time_window*
@@ -252,6 +296,85 @@ class VibData:
                 vibBuf[5].append(cursor['mpu2']['z'])
 
         return vibAgg
+
+    
+    def getMultiFeatureAggregatedArray(self, active_id, time_window):
+        '''
+            Aggregated array with window *time_window*
+
+            return: list of dict
+            {
+                timestamp
+                rms: [[mpu1.x,...],...[mpu2.z,...]],
+                kurtosis: [[mpu1.x,...],...[mpu2.z,...]],
+                skewness: [[mpu1.x,...],...[mpu2.z,...]],
+                crest-factor: [[mpu1.x,...],...[mpu2.z,...]],
+                peak-to-peak: [[mpu1.x,...],...[mpu2.z,...]],
+            }
+        '''
+
+        # Feature calculation by *array* of values
+        def rms(array):
+            return np.sqrt(np.mean(np.square(array)))
+        
+        def kurtosis(array):
+            return scipy.stats.kurtosis(array)
+
+        def skewness(array):
+            return scipy.stats.skew(array)
+
+        def crest_factor(array):
+            return (max(array)/rms(array))
+
+        def peak_to_peak(array):
+            return (max(array) - min(array))
+
+
+        # Extract data
+        activeData = self.activeDataArray[active_id]['data']
+        tsMin = activeData[0]['timestamp']
+        tsMax = activeData[-1]['timestamp']
+
+
+        # Aggregation variable buffer
+        vibBuf = [[],[],[],[],[],[]]  # mpu1.x, ..., mpu2.z
+        aggArray = []
+
+
+        # Aggregation loop
+        tsPrev = tsMin
+        for i in range(len(activeData)):
+            cursor = activeData[i]
+            tsCursor = cursor['timestamp']
+
+            # Add data point to buffer
+            vibBuf[0].append(cursor['mpu1']['x'])
+            vibBuf[1].append(cursor['mpu1']['y'])
+            vibBuf[2].append(cursor['mpu1']['z'])
+            vibBuf[3].append(cursor['mpu2']['x'])
+            vibBuf[4].append(cursor['mpu2']['y'])
+            vibBuf[5].append(cursor['mpu2']['z'])
+            
+            # Aggregate if delta time exceed time_window
+            if (tsCursor > (tsPrev + time_window)) or (i+1) == len(activeData):
+
+                # Add aggregated value
+                aggArray.append(
+                    {
+                        'timestamp': int(tsCursor),
+                        'rms': [rms(vArr) for vArr in vibBuf],
+                        'kurtosis': [kurtosis(vArr) for vArr in vibBuf],
+                        'skewness': [skewness(vArr) for vArr in vibBuf],
+                        'crest-factor': [crest_factor(vArr) for vArr in vibBuf],
+                        'peak-to-peak': [peak_to_peak(vArr) for vArr in vibBuf]
+                    }
+                )
+
+                # Reset buffer
+                tsPrev = tsCursor
+                vibBuf = [[],[],[],[],[],[]]
+
+        return aggArray
 
 
     def getVibRMSArray(self, active_id):
@@ -389,10 +512,23 @@ class VibData:
 
         plt.show()
 
+    
+    def plotTimedelta(self, active_id):
+        '''
+            Plot time delta from stored data by getTimesampDeltaArray
+        '''
+        tdArray = self.getTimestampDeltaArray(active_id)
+
+        fig = plt.figure()
+        plt.scatter(list(range(len(tdArray)-1)), tdArray[1:], s=2)
+        plt.plot([np.mean(tdArray[1:]) for _ in range(len(tdArray)-1)], color='C3')
+        plt.title('MQTT')
+        plt.ylim(0,20)
+        plt.show()
 
 
 class NavData:
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, host='localhost', port=27017):
         """
         [DOCUMENT TEMPLATE]
         {
@@ -435,7 +571,7 @@ class NavData:
 
         """ Connect to database """
         self.verbose = verbose
-        self.initializeConnectionDB()
+        self.initializeConnectionDB(host, port)
         
         self.activeDataArray = []
     
@@ -474,16 +610,6 @@ class NavData:
     def listDescription(self):
         return list(self.navCollection.distinct('description'))
 
-    
-    def listDescriptionTimestamp(self):
-        descArray = self.listDescription()
-        descTimestampArray = []
-
-        for desc in descArray:
-            minTs, maxTs = self.getTimestampRangeByDescription(desc, True)
-            descTimestampArray.append((desc, minTs, maxTs))
-
-        return descTimestampArray
 
     def listDescriptionTimestamp(self):
         descArray = self.listDescription()
@@ -498,6 +624,7 @@ class NavData:
             })
 
         return descTimestampArray
+
 
     def getAllDocuments(self):
         '''
@@ -570,6 +697,15 @@ class NavData:
         return timestampArray
 
 
+    def getTimestampDeltaArray(self, active_id):
+        ''' Get timestamp delta array of stored documents with index *active_id* '''
+
+        tsArray = self.getTimestampArray(active_id)
+
+        tdArray = [(tsArray[i] - tsArray[i-1]) for i in range(len(tsArray))]
+        return tdArray
+
+
     def getPWMArray(self, active_id):
         def getPWM(obj):
             return [
@@ -597,6 +733,37 @@ class NavData:
 
         return pwmArray
 
+
+    def getMultiFeatureArray(self, active_id):
+        '''
+            Get multi feature array of stored active data with index *active_id*
+
+            return: list of dict
+            {
+                timestamp,
+                pwm: [mot1,mot2,mot3,mot4],
+                orientation: [roll,pitch,yaw],
+                rawAccel: [x,y,z]
+            }
+        '''
+
+        # Extract data
+        activeData = self.activeDataArray[active_id]['data']
+
+        multiFeatureArray = []
+        
+        for data in activeData:
+            featureData = {
+                'timestamp': data['timestamp'],
+                'pwm': [p[1] for p in data['navdata']['pwm'].items()],
+                'orientation': [p[1] for p in data['navdata']['orientation'].items()],
+                'rawAccel': [p[1] for p in data['navdata']['rawMeasures']['accelerometers'].items()]
+            }
+            
+            multiFeatureArray.append(featureData)
+
+        return multiFeatureArray
+
     
     def getPWMAggregatedArray(self, active_id, time_window):
         '''
@@ -617,36 +784,82 @@ class NavData:
         for i in range(len(activeData)):
             cursor = activeData[i]
             tsCursor = cursor['timestamp']
-            """ if tsCursor >= 1595915848815 and tsCursor <= 1595915856903:
-                print(cursor) """
-            
+
+            # Add data point to buffer
+            for idx, (key, val) in enumerate(cursor['navdata']['pwm'].items()):
+                    pwmBuf[idx].append(val)
             
             # Aggregate if delta time exceed time_window
             if (tsCursor > (tsPrev + time_window)) or (i+1) == len(activeData):
-                """ if tsCursor >= 1595915848815 and tsCursor <= 1595915856903:
-                    print('pwmBuf: ', pwmBuf) """
-                for idx, (key, val) in enumerate(cursor['navdata']['pwm'].items()):
-                    pwmBuf[idx].append(val)
+
+                # Add aggregated value
                 pwmAgg.append(
                     [
                         int(tsCursor), 
                         [np.sqrt(np.mean(np.square(v))) for v in pwmBuf]
                     ]
                 )
+
+                # Reset buffer
                 tsPrev = tsCursor
                 pwmBuf = [[],[],[],[]]
 
-            # Add data point to buffer
-            # Handle nan as zero value
-            else:
-                for idx, (key, val) in enumerate(cursor['navdata']['pwm'].items()):
-                    pwmBuf[idx].append(val)
-                """ pwmBuf[0].append(cursor['navdata']['pwm']['mot1'])
-                pwmBuf[1].append(cursor['navdata']['pwm']['mot2'])
-                pwmBuf[2].append(cursor['navdata']['pwm']['mot3'])
-                pwmBuf[3].append(cursor['navdata']['pwm']['mot4']) """
-
         return pwmAgg
+
+    
+    def getMultiAggregatedArray(self, active_id, time_window):
+        '''
+            Aggregated array with window *time_window*
+
+            return: list of tuple [(ts, [pwm1,..], [pitch,...], [acc.x,...]),...]
+        '''
+
+        # Extract data
+        activeData = self.activeDataArray[active_id]['data']
+        tsMin = activeData[0]['timestamp']
+        tsMax = activeData[-1]['timestamp']
+
+        # Aggregation variable buffer
+        pwmBuf = [[],[],[],[]]  # pwm1,...,pwm4
+        orientBuf = [[],[],[]]  # roll, pitch, yaw
+        rawBuf = [[],[],[]]     # acc.x, acc.y, acc.z
+
+        aggArray = []
+        
+        # Aggregation loop
+        tsPrev = tsMin
+        for i in range(len(activeData)):
+            cursor = activeData[i]
+            tsCursor = cursor['timestamp']
+
+            # Add data point to buffer
+            for idx, (key, val) in enumerate(cursor['navdata']['pwm'].items()):
+                pwmBuf[idx].append(val)
+            for idx, (key, val) in enumerate(cursor['navdata']['orientation'].items()):
+                orientBuf[idx].append(val)
+            for idx, (key, val) in enumerate(cursor['navdata']['rawMeasures']['accelerometers'].items()):
+                rawBuf[idx].append(val)
+            
+            # Aggregate if delta time exceed time_window
+            if (tsCursor > (tsPrev + time_window)) or (i+1) == len(activeData):
+
+                # Add aggregated value to aggArray
+                aggArray.append(
+                    {
+                        'timestamp': int(tsCursor),
+                        'pwm': [np.mean(pArr) for pArr in pwmBuf],
+                        'orientation': [np.mean(oArr) for oArr in orientBuf],
+                        'rawaccel': [np.mean(rArr) for rArr in rawBuf],
+                    }
+                )
+
+                # Reset buffer
+                tsPrev = tsCursor
+                pwmBuf = [[],[],[],[]]
+                orientBuf = [[],[],[]]
+                rawBuf = [[],[],[]]
+
+        return aggArray
 
 
     ##### Plotting #####
@@ -670,12 +883,584 @@ class NavData:
         plt.grid(True)
         plt.show()
 
+    def plotTimedelta(self, active_id):
+        '''
+            Plot time delta from stored data by getTimesampDeltaArray
+        '''
+        tdArray = self.getTimestampDeltaArray(active_id)
+
+        fig = plt.figure()
+        plt.scatter(list(range(len(tdArray)-1)), tdArray[1:], s=2)
+        plt.plot([np.mean(tdArray[1:]) for _ in range(len(tdArray)-1)], color='C3')
+        plt.title('Local')
+        plt.yticks(range(0,20,2))
+        plt.ylim(0,20)
+        plt.show()
+
 
 
 class NavdataVib:
     def __init__(self, verbose=False):
         self.verbose = verbose
+
     
+    def combineData(self, pwmdata, vibdata):
+        '''
+            Combine based on smallest timestamp delta
+            (Currently pwmdata to match vibdata timestamp)
+
+            Input format:
+            pwmdata = [[timestamp,...], [pwm,...]]
+            vibdata = [[timestamp,...], [[vib.x,...],...]]
+
+            Return format:
+            [timestamp, pwm, vibx, viby, vibz]
+        '''
+
+        tsPWM = pwmdata[0]
+        tsVib = vibdata[0]
+        pwmArray = pwmdata[1]
+        vibArray = vibdata[1]
+
+        # Get average timestamp
+        tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
+        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+
+        if self.verbose:
+            print('Timestamp avg: {} | {}'.format(tsPWMAvg, tsVibAvg))
+
+        
+        # Interpolate PWM data into Vib data
+        if tsVibAvg < tsPWMAvg:
+            newPWMArray = []
+
+            for ts in tsVib:
+
+                # Vibration data traversal
+                i = len(tsPWM) - 1
+                while tsPWM[i] > ts:
+                    i -= 1
+                #print('idx:', i, end='\r')
+                
+                # Append inrange data into new pwm array
+                newPWMArray.append(pwmArray[i])
+
+        #print('Combined data result: {} | {}'.format(len(newPWMArray), len(tsVib)))
+        
+        combinedArray = []
+        for i in range(len(tsVib)):
+            combinedArray.append([
+                tsVib[i],
+                newPWMArray[i],
+                [
+                    vibArray[0][i],
+                    vibArray[1][i],
+                    vibArray[2][i]
+                ]
+            ])
+
+        #combinedArray = [tsVib, newPWMArray, *vibArray]
+        return combinedArray
+
+    
+    def combineDataMultiFeature(self, navdata, vibdata):
+        '''
+            Combine navdata and vibdata based on smallest timestamp delta,
+            Value of feature duplicated / shifted to matching timestamp
+
+            Compatible feed function: 
+            - NavData.getMultiFeatureArray
+            - VibData.getMultiFeatureArray
+
+            ---------------
+            Input format:
+            ---------------
+            navdata = list of dict
+                {
+                    timestamp,
+                    pwm: [mot1,mot2,mot3,mot4],
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z]
+                }
+
+            vibdata = list of dict
+                {
+                    timestamp,
+                    mpu1: [x,y,z],
+                    mpu2: [x,y,z],
+                }
+
+            ---------------
+            Return format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    pwm: [mot1,mot2,mot3,mot4],
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mpu1: [x,y,z],
+                    mpu2: [x,y,z],
+                }
+        '''
+
+        tsNav = [nav['timestamp'] for nav in navdata]
+        tsVib = [vib['timestamp'] for vib in vibdata]
+
+        # Check for data duplication (skip if tsNow <= tsPrev)
+        tsNavPrev = 0
+        tsVibPrev = 0
+
+        # Get average timestamp
+        tsNavAvg = (max(tsNav) - min(tsNav)) / len(tsNav)
+        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+
+        if self.verbose:
+            print('tsPWM: {} | tsVib: {}'.format(tsNavAvg, tsVibAvg))
+            print('tsPWM: {} - {}'.format(min(tsNav), max(tsNav)))
+            print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
+        
+        combinedArray = []
+
+        # Interpolate Nav data into Vib data
+        if tsVibAvg < tsNavAvg:
+            
+            # Iterate over vib timestamp
+            tsNavPrev = 0
+            tsVibPrev = 0
+            for t in range(0, len(tsVib)):
+
+                # Get insert index (nav timestamp less than current vib timestamp)
+                i = len(tsNav) - 1
+                while tsNav[i] > tsVib[t]:
+                    i -= 1
+                
+                # Conditional for duplicated timestamp or backward timestamp
+                # (may be indicate of duplicate data point / data set)
+                if (tsNav[i] < tsNavPrev) or (tsVib[t] < tsVibPrev):
+                    continue
+
+                # Append data into combined array
+                combinedArray.append(
+                    {
+                        'timestamp': tsVib[t],
+                        'pwm': [p[1] for p in navdata[i]['pwm'].items()],
+                        'orientation': [o[1] for o in navdata[i]['orientation'].items()],
+                        'rawAccel': [r[1] for r in navdata[i]['rawAccel'].items()],
+                        'mpu1': [v[1] for v in vibdata[i]['mpu1']],
+                        'mpu2': [v[1] for v in vibdata[i]['mpu2']]
+                    }
+                )
+
+                tsNavPrev = tsNav[i]
+                tsVibPrev = tsVib[i]
+
+
+        # Interpolate vib data into PWM data
+        elif tsNavAvg < tsVibAvg:
+            #print('tsnav < tsvib')
+            # Special case: trim boundary data from Nav array
+            # start(tsNav) <= start(tsVib)
+            startTrim = 0
+            while tsNav[startTrim] < tsVib[0]:
+                startTrim += 1
+
+            # stop(tsNav) >= stop(tsVib)
+            stopTrim = len(tsNav) - 1
+            while tsNav[stopTrim] > tsVib[-1]:
+                stopTrim -= 1
+            
+            # Iterate over nav timestamp (trimmed based on special case)
+            tsNavPrev = 0
+            tsVibPrev = 0
+            for t in range(startTrim, stopTrim):
+
+                # Get insert index (vib timestamp less than current nav timestamp)
+                i = len(tsVib) - 1
+                while tsVib[i] > tsNav[t]:
+                    i -= 1
+
+                # Conditional for duplicated timestamp or backward timestamp
+                # (may be indicate of duplicate data point / data set)
+                if (tsVib[i] < tsVibPrev) or (tsNav[t] < tsNavPrev):
+                    #print('{} <= {} | {} <= {}'.format(tsNav[i], tsNavPrev, tsVib[t], tsVibPrev))
+                    continue
+
+                # Append data into combined array
+                """ {
+                    'pwm': [p[1] for p in navdata[i]['pwm'].items()],
+                    'orientation': [o[1] for o in navdata[i]['orientation'].items()],
+                    'rawAccel': [r[1] for r in navdata[i]['rawAccel'].items()],
+                    'mpu1': [v[1] for v in vibdata[i]['mpu1']],
+                    'mpu2': [v[1] for v in vibdata[i]['mpu2']]
+                } """
+                combinedArray.append(
+                    {
+                        'timestamp': tsNav[t],
+                        'pwm': navdata[t]['pwm'],
+                        'orientation': navdata[t]['orientation'],
+                        'rawAccel': navdata[t]['rawAccel'],
+                        'mpu1': vibdata[i]['mpu1'],
+                        'mpu2': vibdata[i]['mpu2']
+                    }
+                )
+
+                tsNavPrev = tsNav[i]
+                tsVibPrev = tsVib[i]
+
+        # Return combined array
+        #print('Combined data result: {} | {}'.format(len(newVibArray[0]), len(tsPWM)))
+        return combinedArray
+
+    
+    def aggregateCombined(self, combined_data, time_window):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    pwm: [mot1,mot2,mot3,mot4],
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mpu1: [x,y,z],
+                    mpu2: [x,y,z],
+                }
+
+            ---------------
+            Return format:
+            ---------------
+            list of dict
+                {
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mot1: {
+                        'pwm': 0,
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm': 0,
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    }
+                }
+        '''
+
+        # Feature calculation by *array* of values
+        def rms(array):
+            return np.sqrt(np.mean(np.square(array)))
+        
+        def kurtosis(array):
+            return scipy.stats.kurtosis(array)
+
+        def skewness(array):
+            return scipy.stats.skew(array)
+
+        def crest_factor(array):
+            return (max(array)/rms(array))
+
+        def peak_to_peak(array):
+            return (max(array) - min(array))
+
+
+        combinedData = combined_data.copy()
+
+        # Loop over timestamp and aggregate if buffer time exceed time window
+        timePrev = combinedData[0]['timestamp']
+        cursorIdx = 0
+
+        # Aggregate buffer to store combined data point
+        aggBuf = []
+        aggDataArray = []
+
+        while cursorIdx < len(combinedData):
+            # Calculate time delta
+            timeCursor = combinedData[cursorIdx]['timestamp']
+            
+            # Calculate feature
+            if (timeCursor - timePrev) >= time_window:
+
+                aggBuf.append(combinedData[cursorIdx])
+
+                # Empty dictionary format
+                aggData = {
+                    'orientation': [0,0,0],
+                    'rawAccel': [0,0,0],
+                    'mot1': {
+                        'pwm': 0,
+                        'rms': [0,0,0],
+                        'kurtosis': [0,0,0],
+                        'skewness': [0,0,0],
+                        'crest-factor': [0,0,0],
+                        'peak-to-peak': [0,0,0],
+                    },
+                    'mot2': {
+                        'pwm': 0,
+                        'rms': [0,0,0],
+                        'kurtosis': [0,0,0],
+                        'skewness': [0,0,0],
+                        'crest-factor': [0,0,0],
+                        'peak-to-peak': [0,0,0],
+                    }
+                }
+
+                # Calculate feature aggregation
+                aggData['orientation'] = [np.mean([data['orientation'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['rawAccel'] = [np.mean([data['rawAccel'][axis] for data in aggBuf]) for axis in range(3)]
+                
+                aggData['mot1']['pwm'] = np.mean([data['pwm'][0] for data in aggBuf])
+                aggData['mot2']['pwm'] = np.mean([data['pwm'][1] for data in aggBuf])
+
+                aggData['mot1']['rms'] = [rms([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['rms'] = [rms([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['kurtosis'] = [kurtosis([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['kurtosis'] = [kurtosis([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['skewness'] = [skewness([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['skewness'] = [skewness([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['crest-factor'] = [crest_factor([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['crest-factor'] = [crest_factor([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['peak-to-peak'] = [peak_to_peak([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['peak-to-peak'] = [peak_to_peak([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+
+                aggDataArray.append(aggData)
+                timePrev = timeCursor
+
+                # Reset buffer
+                aggBuf = []
+
+
+            # Add to buffer
+            else:
+                aggBuf.append(combinedData[cursorIdx])
+
+            cursorIdx += 1
+
+        return aggDataArray
+
+    
+    def combineMultiAggregatedArray(self, navdata_agg, vibdata_agg, time_window=None):
+        '''
+            If aggregated array length not equal, required arg *time_window*:
+                same as previous value with specified timeWindow
+        '''
+
+        # Get aggregated vibration and pwm data
+        tsArrayNavdata = [n[0] for n in navdata_agg]
+        tsArrayVibdata = [v[0] for v in vibdata_agg]
+        nNavdata = len(tsArrayNavdata)
+        nVibdata = len(tsArrayVibdata)
+
+        # Debug
+        #print([tsArrayNavdata[i] - tsArrayNavdata[i-1] for i in range(1,nNavdata)])
+        
+        # Aggregated array length not equal
+        if nNavdata != nVibdata:
+            if self.verbose:
+                print('Array dimension not equal [nav: {} | vib: {}], processing...'.format(nNavdata, nVibdata))
+
+            # Plot timestamp (debug)
+            """ plt.plot(list(range(nNavdata)), tsArrayNavdata, color='C0')
+            plt.plot(list(range(nVibdata)), tsArrayVibdata, color='C1')
+            plt.show() """
+
+            # Value insertion
+            if nNavdata < nVibdata:
+                tdNavdata = [(tsArrayNavdata[i] - tsArrayNavdata[i-1]) for i in range(1,nNavdata)]
+
+                # Get timedelta index bigger than timeWindow (>30%)
+                tdOverrange = [(idx,td) for (idx,td) in zip(list(range(len(tdNavdata))), tdNavdata) if td >= (time_window * 1.2)]
+
+                # Before state (debug)
+                #print('Before:', *navdata_agg, sep='\n')
+                #print('Timedelta overrange: ', tdOverrange)
+
+                for td in tdOverrange[::-1]:
+                    tdCount = td[1] // time_window
+                    tdIdx = td[0]
+                    prevNavdata = navdata_agg[tdIdx]
+
+                    # Insert with value 
+                    for i in range(tdCount-1):
+                        # Copy previous navdata
+                        insertedNavdata = prevNavdata.copy()
+
+                        # Update timestamp to match time_window step value
+                        insertedNavdata[0] = prevNavdata[0] + ((tdCount-1-i)*time_window)
+
+                        # Insert
+                        navdata_agg.insert(tdIdx+1, insertedNavdata)
+
+
+                # Validation (debug)
+                #tsArrayNavdata = [n[0] for n in navdata_agg]
+                #tdNavdata = [(tsArrayNavdata[i] - tsArrayNavdata[i-1]) for i in range(1,nNavdata)]
+                #print('After:', *navdata_agg, sep='\n')
+                #print(tdNavdata)
+                #plt.plot(list(range(len(tsArrayNavdata))), tsArrayNavdata)
+                #plt.show()
+
+        # Aggregated array length equal
+        aggArray = []
+
+        for i in range(nNavdata):
+            try:
+                aggArray.append(
+                    [
+                        navdata_agg[i][0],
+                        navdata_agg[i][1],
+                        navdata_agg[i][2],
+                        navdata_agg[i][3],
+                        vibdata_agg[i][1]
+                    ]
+                )
+            
+            except IndexError:
+                try:
+                    print('vibdata_agg[i]')
+                    print(vibdata_agg[i])
+
+                except IndexError:
+                    print('vibdata_agg')
+                    print(vibdata_agg)
+
+
+
+        return aggArray
+
+    
+def combineArray(pwmdata, vibdata):
+    '''
+        Combine based on smallest timestamp delta
+        (Currently pwmdata to match vibdata timestamp)
+
+        Input format:
+        pwmdata = [[timestamp,...], [pwm,...]]
+        vibdata = [[timestamp,...], [[vib.x,...],...]]
+
+        Return format:
+        [timestamp, pwm, vibx, viby, vibz]
+    '''
+
+    tsPWM = pwmdata[0]
+    tsVib = vibdata[0]
+    pwmArray = pwmdata[1]
+    vibArray = vibdata[1]
+
+    # Check for data duplication
+    tsPWMUnique = []
+    tsPWMUnique = [tsPWMUnique.append(ts) for ts in tsPWM if ts not in tsPWMUnique] 
+    tsVibUnique = []
+    tsVibUnique = [tsVibUnique.append(ts) for ts in tsVib if ts not in tsVibUnique]
+    
+    # PWMData duplicate (most likely)
+    if len(tsPWMUnique) != len(tsPWM):
+        print('Duplicated data (PWM)! {} -> {}'.format(len(tsPWMUnique), len(tsPWM)))
+        tsPWM = tsPWM[:len(tsPWMUnique)]
+        pwmArray = pwmArray[:len(tsPWMUnique)]
+    
+    # Vibdata duplicate (not likely, but ok)
+    if len(tsVibUnique) != len(tsVib):
+        print('Duplicated data (Vib)!')
+
+
+    # Get average timestamp
+    tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
+    tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+
+    print('tsPWM: {} | tsVib: {}'.format(tsPWMAvg, tsVibAvg))
+    print('tsPWM: {} - {}'.format(min(tsPWM), max(tsPWM)))
+    print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
+    
+    # Interpolate PWM data into Vib data
+    if tsVibAvg < tsPWMAvg:
+        newPWMArray = []
+
+        for ts in tsVib:
+
+            # Vibration data traversal
+            i = len(tsPWM) - 1
+            while tsPWM[i] > ts:
+                i -= 1
+            #print('idx:', i, end='\r')
+            
+            # Append inrange data into new pwm array
+            newPWMArray.append(pwmArray[i])
+
+        # Restructure data
+        combinedArray = []
+        for i in range(len(tsVib)):
+            combinedArray.append([
+                tsVib[i]-tsVib[0],
+                newPWMArray[i],
+                [
+                    vibArray[0][i],
+                    vibArray[1][i],
+                    vibArray[2][i]
+                ]
+            ])
+
+    # Interpolate vib data into PWM data
+    elif tsPWMAvg < tsVibAvg:
+        # Special case: trim boundary data from tsPWM and pwmArray
+        startTrim = 0
+        while tsPWM[startTrim] < tsVib[0]:
+            startTrim += 1
+
+        stopTrim = -1
+        while tsPWM[stopTrim] > tsVib[-1]:
+            stopTrim -= 1
+        
+        tsPWM = tsPWM[startTrim:stopTrim]
+        pwmArray = pwmArray[startTrim:stopTrim]
+
+        newVibArray = [[],[],[]]
+
+        for ts in tsPWM:
+            i = 0
+            try:
+                while tsVib[i] < ts:
+                    i += 1
+            except:
+                print(i, ':', tsVib[i-1], '<', ts)
+                sys.exit()
+
+
+            # Append inrange data into new pwm array
+            newVibArray[0].append(vibArray[0][i])
+            newVibArray[1].append(vibArray[1][i])
+            newVibArray[2].append(vibArray[2][i])
+        
+        # Debug
+        #print(len(newVibArray[0]), newVibArray[0][:5])
+        #print(len(newVibArray[1]), newVibArray[1][:5])
+        #print(len(newVibArray[2]), newVibArray[2][:5])
+
+        # Restructure data
+        combinedArray = []
+        for i in range(len(tsPWM)):
+            combinedArray.append([
+                tsPWM[i]-tsPWM[0],
+                pwmArray[i],
+                [
+                    newVibArray[0][i],
+                    newVibArray[1][i],
+                    newVibArray[2][i]
+                ]
+            ])
+
+        #print('Combined data result: {} | {}'.format(len(newVibArray[0]), len(tsPWM)))
+        # combinedArray = [tsVib, newPWMArray, *vibArray]
+        return combinedArray
+        
     
     def combineAggregatedArray(self, navdata_agg, vibdata_agg, time_window=None):
         '''
@@ -1055,7 +1840,7 @@ class NavdataVib:
 ##### Driver #####
 if __name__ == '__main__':
     ### Parameter ###
-    queryDescription = 'jul29_hover_20s_disturb.json'
+    queryDescription = 'aug9_0_hover10s.json'
     plotVibAxis = ['x','y','z']
     stepWeight = 0.1
     windowSize = 50
@@ -1066,12 +1851,13 @@ if __name__ == '__main__':
     ### Object Declaration ###
     Vib = VibData()
     Nav = NavData()
+    NV = NavdataVib()
 
     # List description
     #print('List description:', Nav.listDescriptionTimestamp()[1:])
 
     # Load navigation data by timestamp
-    desc_id_nav = Nav.storeData(Nav.getByDescription(description=queryDescription, landed=True), 'test by description')
+    """ desc_id_nav = Nav.storeData(Nav.getByDescription(description=queryDescription, landed=True), 'test by description')
 
     # Load vibration data by same timestamp range as navidation data
     tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
@@ -1084,7 +1870,9 @@ if __name__ == '__main__':
     label = ['New Motor', 'Old Motor', 'Motor3', 'Motor4']
     #Nav.plotDataMulti(Nav.getPWMArray(desc_id_nav), label)
     label = ['New Motor - X', 'New Motor - Y', 'New Motor - Z', 'Old Motor- X', 'Old Motor- Y', 'Old Motor- Z']
-    Vib.plotDataMulti(Vib.getVibArray(desc_id_vib), label)
+    #Vib.plotDataMulti(Vib.getVibArray(desc_id_vib), label)
+    #Vib.plotTimedelta(desc_id_vib)
+    Nav.plotTimedelta(desc_id_nav) """
 
     """ Vib.plotDataMultiMovingRMS(
         time_array=Vib.getTimestampArray(desc_id_vib),
@@ -1153,3 +1941,30 @@ if __name__ == '__main__':
         navdata=([Nav.getTimestampArray(desc_id_nav)]),
         vibdata=([Vib.getTimestampFilledArray(desc_id_vib)])
     ) """
+
+    # Get timestamp range
+    tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
+
+    # Store data to active
+    navId = Nav.storeData(Nav.getByDescription(description=queryDescription, landed=True), 'test by description')
+    vibId = Vib.storeData(Vib.getBetweenTimestamp(tstart, tstop), 'test between timestamp')
+
+    navMultiArray = Nav.getMultiFeatureArray(navId)
+    vibMultiArray = Vib.getMultiFeatureArray(vibId)
+
+    print('navmulti', len(navMultiArray))
+    print('vibmulti', len(vibMultiArray))
+
+    combinedMultiArray = NV.combineDataMultiFeature(
+        navdata=navMultiArray,
+        vibdata=vibMultiArray
+    )
+
+    # Plot sample
+    plt.plot(list(range(len(combinedMultiArray))), [data['pwm'][0] for data in combinedMultiArray])
+    plt.plot(list(range(len(combinedMultiArray))), [data['mpu1'][0] for data in combinedMultiArray])
+    plt.grid(True)
+    plt.show()
+
+
+    print('combmulti', len(combinedMultiArray))

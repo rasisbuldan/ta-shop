@@ -15,7 +15,6 @@ int throttleVal;
 
 void setup(){
     Serial.begin(115200);
-    Serial.print("Serial ready!");
 
     /* Attach DShot ESC to pin D9 */
     esc.attach(9);

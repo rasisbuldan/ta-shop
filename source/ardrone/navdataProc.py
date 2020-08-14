@@ -316,7 +316,7 @@ class FlightData:
 
 if __name__ == '__main__':
     # Ascent
-    FD = FlightData('D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_28/flight_new_1595916173725_hover30s_4.json')
+    FD = FlightData('C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone/nodejs/flight-data/aug_8/flight_new_1596883915150_aug8_1_hover20s_4.json')
     
     print('Processing Flight Data with {} points'.format(len(FD.navdataArray)))
     print('Battery Percentage:',FD.navdataArray[0].getBatteryPercentage())
