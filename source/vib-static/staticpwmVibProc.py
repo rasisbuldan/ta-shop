@@ -427,7 +427,7 @@ class StaticPWMData:
         ''' Connect to database with default localhost '''
         self.clientDB = pymongo.MongoClient(host, port)
 
-        self.pwmCollection = self.clientDB['test-db']['staticpwm2s']
+        self.pwmCollection = self.clientDB['test-db']['staticpwm3s']
         if self.verbose:
             print('Connection to test-db.staticpwms successful with', self.numOfDocuments(), 'documents')
 
@@ -835,10 +835,7 @@ class StaticVibData:
         tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
         tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
 
-        if self.verbose:
-            print('Timestamp avg: {} | {}'.format(tsPWMAvg, tsVibAvg))
 
-        
         # Interpolate PWM data into Vib data
         if tsVibAvg < tsPWMAvg:
             newPWMArray = []
@@ -868,11 +865,6 @@ class StaticVibData:
             ])
         
         return aggArray
-
-
-
-        #combinedArray = [tsVib, newPWMArray, *vibArray]
-        return combinedArray
         
     
     def combineAggregatedArray(self, pwmdata_agg, vibdata_agg, time_window=None):

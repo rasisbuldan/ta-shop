@@ -10,7 +10,8 @@ import os
 import traceback
 
 ### Variable ###
-data_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/data/static_pwm_to_db_aug5/v2'
+stored_filename_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/vib-static/stored_v3.txt'
+data_path = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/data/static_pwm_to_db_aug6'
 
 dataTemplate = {
     "description": "",
@@ -38,6 +39,15 @@ def loadDataset(filename):
     '''
         File traversal, load into database via dictionary
     '''
+    # Check if filename already loaded
+    with open(stored_filename_path) as stored_file:
+        stored = stored_file.readlines()
+
+        # Filename already stored
+        if (filename + '\n') in stored:
+            print('[!] File {} already stored!'.format(filename))
+            return
+
     # Filename parse
     fn = filename.split("_")
     timestart = int(fn[3])
@@ -64,7 +74,12 @@ def loadDataset(filename):
                 payload['description'] = desc + '_' + str(batchNum)
                 payload['timestart'] = timestartBatch
                 payload['timestamp'] = int(data[0])
-                payload['pwm'] = int(data[1])
+
+                pwmVal = int(data[1])
+                if pwmVal == 50:
+                    payload['pwm'] = 100
+                else:
+                    payload['pwm'] = pwmVal
 
             
             except Exception as e:
@@ -74,6 +89,10 @@ def loadDataset(filename):
 
             # Insert into MongoDB
             idNum = staticpwmCollection.insert_one(payload)
+
+    # Add to stored filename document
+    with open(stored_filename_path, 'a+') as stored_file:
+        stored_file.write(filename+'\n')
     
     print('Load {} with {} data points complete!'.format(filename, i))
 
@@ -81,7 +100,7 @@ def loadDataset(filename):
 ### Main ###
 # MongoDB Connector
 clientDB = pymongo.MongoClient("localhost", 27017)
-staticpwmCollection = clientDB['test-db']['staticpwm2s']
+staticpwmCollection = clientDB['test-db']['staticpwm3s']
 
 dirlist = getDirectoryList(data_path)
 for file in dirlist:

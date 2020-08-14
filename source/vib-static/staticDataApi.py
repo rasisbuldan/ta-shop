@@ -2,6 +2,7 @@
     TO DO:
         - Implement total time using timedelta
         - Implement motor on lifetime
+        - Add voltage/current plot
 '''
 
 import os
@@ -88,6 +89,12 @@ class Power:
 
         return filetime
 
+    def getThrottleValue(self):
+        fn = self.filename.split("_")
+        throttle_val = fn[-1][:-4]
+
+        return throttle_val
+
     def getTimeDelta(self):
         return self.timeDelta
     
@@ -103,8 +110,9 @@ class Power:
 
 
 class StaticData:
-    def __init__(self, data_dir, data_type, accel_dir='accel', power_dir='vi'):
+    def __init__(self, data_dir, dataset_dir, data_type, accel_dir='accel', power_dir='vi'):
         self.data_dir = data_dir
+        self.dataset_dir = dataset_dir
         self.data_type = data_type
         self.accel_dir = accel_dir
         self.power_dir = power_dir
@@ -188,22 +196,25 @@ class StaticData:
                 'error': []
             }
         
-        if data_type == 'accel-sweep':
+        if data_type == 'accel-power-sweep':
             # File traversal
             self.numberOfFiles = {
                 'vibration': 0
             }
             self.unprocessedFiles = {
-                'vibration': self.listFiles(self.data_dir)
+                'vibration': self.listFiles(os.path.join(self.data_dir, accel_dir)),
+                'power': self.listFiles(os.path.join(self.data_dir, power_dir))
             }
             self.processedFiles = {
-                'vibration': []
+                'vibration': [],
+                'power': []
             }
 
             # Feature data
             self.featureData = {
                 'source': self.data_dir,
-                'type': 'accel-sweep',
+                'type': 'accel-power-sweep',
+                'step': 0,
                 'numberOfData': 0,
                 'vibration': {
                     'throttle': [],
@@ -233,33 +244,52 @@ class StaticData:
                         'z': [],
                     }
                 },
+                'power': {
+                    'throttle': [],
+                    'rms': {
+                        'voltage': [],
+                        'current': [],
+                    },
+                    'kurtosis': {
+                        'voltage': [],
+                        'current': [],
+                    },
+                    'skewness': {
+                        'voltage': [],
+                        'current': [],
+                    },
+                    'crest-factor': {
+                        'voltage': [],
+                        'current': [],
+                    },
+                    'peak-to-peak': {
+                        'voltage': [],
+                        'current': [],
+                    }
+                },
                 'error': []
             }
 
 
     ## File Traversal ##
     def listFiles(self, dir):
-        return [f for f in os.listdir(dir) if 'accel' in f]
+        return [f for f in os.listdir(dir) if 'accel' in f or 'vi' in f]
     
     def addDataPoint(self, filename, data_key, feature_key):
         def rms(array):
             return math.sqrt(np.mean(np.square(array)))
 
+        #print(data_key, feature_key)
+        #sys.exit()
 
         if 'vibration' in data_key:
-            if self.data_type == 'accel-power-cont':
-                vib = Vibration(self.data_dir + '/' + self.accel_dir + '/' + filename)
-            elif self.data_type == 'accel-sweep':
-                vib = Vibration(self.data_dir + '/' + filename)
-            
+            vib = Vibration(self.data_dir + '/' + self.accel_dir + '/' + filename)
             vibRaw = vib.getAccel()
-            plt.plot(list(range(len(vibRaw[0]))), vibRaw[0])
-            plt.show()
 
             # Horizontal Axis data
             if self.data_type == 'accel-power-cont':
                 self.featureData['vibration']['measuretime'].append(vib.getMeasureTime())
-            elif self.data_type == 'accel-sweep':
+            elif self.data_type == 'accel-power-sweep':
                 self.featureData['vibration']['throttle'].append(vib.getThrottleValue())
 
             # Vertical Axis data
@@ -278,15 +308,15 @@ class StaticData:
                 self.featureData['vibration']['skewness']['y'].append(scipy.stats.skew(vibRaw[1]))
                 self.featureData['vibration']['skewness']['z'].append(scipy.stats.skew(vibRaw[2]))
             
-            if 'crest' in feature_key:
-                self.featureData['vibration']['skewness']['x'].append(max(vibRaw[0])/rms(vibRaw[0]))
-                self.featureData['vibration']['skewness']['y'].append(max(vibRaw[1])/rms(vibRaw[1]))
-                self.featureData['vibration']['skewness']['z'].append(max(vibRaw[2])/rms(vibRaw[2]))
+            if 'crest-factor' in feature_key:
+                self.featureData['vibration']['crest-factor']['x'].append(max(vibRaw[0])/rms(vibRaw[0]))
+                self.featureData['vibration']['crest-factor']['y'].append(max(vibRaw[1])/rms(vibRaw[1]))
+                self.featureData['vibration']['crest-factor']['z'].append(max(vibRaw[2])/rms(vibRaw[2]))
             
-            if 'p2p' in feature_key:
-                self.featureData['vibration']['skewness']['x'].append(max(vibRaw[0]) - min(vibRaw[0]))
-                self.featureData['vibration']['skewness']['y'].append(max(vibRaw[1]) - min(vibRaw[1]))
-                self.featureData['vibration']['skewness']['z'].append(max(vibRaw[2]) - min(vibRaw[2]))
+            if 'peak-to-peak' in feature_key:
+                self.featureData['vibration']['peak-to-peak']['x'].append(max(vibRaw[0]) - min(vibRaw[0]))
+                self.featureData['vibration']['peak-to-peak']['y'].append(max(vibRaw[1]) - min(vibRaw[1]))
+                self.featureData['vibration']['peak-to-peak']['z'].append(max(vibRaw[2]) - min(vibRaw[2]))
         
         if 'power' in data_key:
             vi = Power(self.data_dir + '/' + self.power_dir + '/' + filename)
@@ -294,7 +324,10 @@ class StaticData:
             
             # Horizontal Axis data
             if self.data_type == 'accel-power-cont':
-                self.featureData['power']['measuretime'].append(vib.getMeasureTime())
+                self.featureData['power']['measuretime'].append(vi.getMeasureTime())
+            elif self.data_type == 'accel-power-sweep':
+                self.featureData['power']['throttle'].append(vi.getThrottleValue())
+            
 
             # Vertical Axis data
             if 'rms' in feature_key:
@@ -309,9 +342,17 @@ class StaticData:
                 self.featureData['power']['skewness']['voltage'].append(scipy.stats.skew(powerRaw[0]))
                 self.featureData['power']['skewness']['current'].append(scipy.stats.skew(powerRaw[1]))
 
+            if 'crest-factor' in feature_key:
+                self.featureData['power']['crest-factor']['voltage'].append(max(powerRaw[0])/rms(powerRaw[0]))
+                self.featureData['power']['crest-factor']['current'].append(max(powerRaw[1])/rms(powerRaw[1]))
+            
+            if 'peak-to-peak' in feature_key:
+                self.featureData['power']['peak-to-peak']['voltage'].append(max(powerRaw[0]) - min(powerRaw[0]))
+                self.featureData['power']['peak-to-peak']['current'].append(max(powerRaw[1]) - min(powerRaw[1]))
+
 
     def loadDataset(self, data_key, feature_key):
-        print('\nProcessing data key', data_key, 'and feature key', feature_key)
+        print('Processing data key', data_key, 'and feature key', feature_key)
 
         # Data key traversal
         for key in data_key:
@@ -319,14 +360,13 @@ class StaticData:
 
             self.numberOfFiles[key] = len(self.unprocessedFiles[key])
             
-            stepSize = self.numberOfFiles[key] // 40
             filenum = 0
             
             # File traversal for specific data key
             while len(self.unprocessedFiles[key]) > 0:
                 filenum += 1
-                step = filenum // stepSize
-                print('Loading dataset', key, '[' + '#' * step + '-' * (40-step) + ']', '{:.1f}%'.format(filenum/self.numberOfFiles[key]*100), end='\r')
+                step = filenum // (self.numberOfFiles[key] // 50)
+                print('Loading dataset', key, '[' + '#' * step + '-' * (50-step) + ']', '{:.1f}%'.format(filenum/self.numberOfFiles[key]*100), end='\r')
 
                 # Pop from unprocessed files list
                 f = self.unprocessedFiles[key].pop(0)
@@ -350,7 +390,7 @@ class StaticData:
                 
                 except:
                     timeException = datetime.now().strftime('%y_%m_%d_%H_%M_%S')
-                    self.saveFeatureData(filename=('static_' + timeException + '.pkl'))
+                    #self.saveFeatureData(filename=('static_' + timeException + '.pkl'))
                     print('\nException Occured on', timeException)
                     print('----------------------------------')
                     traceback.print_exc()
@@ -365,10 +405,65 @@ class StaticData:
         with open(filename, 'wb') as f:
             pickle.dump(self.featureData, f, pickle.HIGHEST_PROTOCOL)
 
-    def loadFeatureData(self, filename):
+    def loadFeatureData(self, filename=None):
+        # If no filename specified, load feature data from latest
+        if filename == None:
+            featureFileList = [f for f in os.listdir(self.dataset_dir) if '.pkl' in f]
+            #print('Feature file list:', *featureFileList, sep='\n')
+            filename = os.path.join(self.dataset_dir, featureFileList[-1])
+
         print('\nLoading feature data from', filename)
         with open(filename, 'rb') as f:
             self.featureData = pickle.load(f)
+
+    def saveToCSV(self, filename, step_num):
+
+        if self.data_type == 'accel-power-sweep':
+            self.featureData['step'] = step_num
+
+            dataArray = np.array([]).reshape(0,28)
+
+            for dataIdx in range(len(self.featureData['vibration']['throttle'])):
+                data = np.array([
+                    self.featureData['source'].split('/')[-1],                                         # 0
+                    self.featureData['step'],
+                    self.featureData['vibration']['throttle'][dataIdx],
+                    self.featureData['vibration']['rms']['x'][dataIdx],
+                    self.featureData['vibration']['rms']['y'][dataIdx],
+                    self.featureData['vibration']['rms']['z'][dataIdx],                 # 5
+                    self.featureData['vibration']['kurtosis']['x'][dataIdx],
+                    self.featureData['vibration']['kurtosis']['y'][dataIdx],
+                    self.featureData['vibration']['kurtosis']['z'][dataIdx],
+                    self.featureData['vibration']['skewness']['x'][dataIdx],
+                    self.featureData['vibration']['skewness']['y'][dataIdx],            # 10
+                    self.featureData['vibration']['skewness']['z'][dataIdx],
+                    self.featureData['vibration']['crest-factor']['x'][dataIdx],
+                    self.featureData['vibration']['crest-factor']['y'][dataIdx],
+                    self.featureData['vibration']['crest-factor']['z'][dataIdx],
+                    self.featureData['vibration']['peak-to-peak']['x'][dataIdx],        # 15
+                    self.featureData['vibration']['peak-to-peak']['y'][dataIdx],
+                    self.featureData['vibration']['peak-to-peak']['z'][dataIdx],
+                    self.featureData['power']['rms']['voltage'][dataIdx],
+                    self.featureData['power']['rms']['current'][dataIdx],
+                    self.featureData['power']['kurtosis']['voltage'][dataIdx],          # 20
+                    self.featureData['power']['kurtosis']['current'][dataIdx],
+                    self.featureData['power']['skewness']['voltage'][dataIdx],
+                    self.featureData['power']['skewness']['current'][dataIdx],
+                    self.featureData['power']['crest-factor']['voltage'][dataIdx],
+                    self.featureData['power']['crest-factor']['current'][dataIdx],      # 25
+                    self.featureData['power']['peak-to-peak']['voltage'][dataIdx],
+                    self.featureData['power']['peak-to-peak']['current'][dataIdx],      # 27
+                ]).reshape(1,28)
+
+                dataArray = np.append(dataArray, data, axis=0)
+
+        np.savetxt(
+            fname=filename,
+            X=dataArray,
+            fmt='%s',
+            delimiter=',',
+            header='src,imstep,throttle,vrmsx,vrmsy,vrmsz,vkurtx,vkurty,vkurtz,vskewx,vskewy,vskewz,vcrestx,vcresty,vcrestz,vpeakx,vpeaky,vpeakz,prmsv,prmsi,pkurtv,pkurti,pskewv,pskewi,pcrestv,pcresti,ppeakv,ppeaki'
+        )
     
 
     ## Feature data processing demo ##
@@ -459,41 +554,133 @@ class StaticData:
         plt.show()
 
     
-    def plotSweep(self, feature_key, data_key='vibration'):
-        xdata = self.featureData['vibration']['throttle']
-        print(self.featureData['vibration']['throttle'])
+    def plotSweep(self, data_key, feature_key):
+        if 'vibration' in data_key:
+            xdata = [int(t) for t in self.featureData['vibration']['throttle']]
+            #print(xdata)
+
+            # Add multiplot
+            fig = plt.figure()
+
+            ax_vib_x = fig.add_subplot(311, label='VibX', frame_on=True)
+            ax_vib_y = fig.add_subplot(312, label='VibY', frame_on=True)
+            ax_vib_z = fig.add_subplot(313, label='VibZ', frame_on=True)
+
+            #ax_v_x = fig.add_subplot(311, label='VoltageX', frame_on=False)
+            ax_i_x = fig.add_subplot(311, label='CurrentX', frame_on=False)
+            #ax_v_y = fig.add_subplot(312, label='VoltageY', frame_on=False)
+            ax_i_y = fig.add_subplot(312, label='CurrentY', frame_on=False)
+            #ax_v_z = fig.add_subplot(313, label='VoltageZ', frame_on=False)
+            ax_i_z = fig.add_subplot(313, label='CurrentZ', frame_on=False)
             
-        # Subplot 1 : X
-        plt.subplot(311)
-        plt.plot(xdata, self.featureData[data_key][feature_key]['x'])
-        plt.gca().xaxis.set_major_locator(plt.MultipleLocator(5))
-        plt.grid(True)
-        plt.title('X-Axis vibration vs Throttle')
+            # Subplot 1
+            p_vib_x, = ax_vib_x.plot(xdata, self.featureData['vibration'][feature_key]['x'], color='C0')
+            ax_vib_x.set_ylabel('RMS Vibration - X', color='C0')
+            ax_vib_x.set_ylim([0,20])
+            ax_vib_x.set_xlim([100,1800])
+            ax_vib_x.set_xticks(np.arange(100, 1800, 100))
 
-        # Subplot 2 : Y
-        plt.subplot(312)
-        plt.plot(xdata, self.featureData[data_key][feature_key]['y'])
-        plt.gca().xaxis.set_major_locator(plt.MultipleLocator(5))
-        plt.grid(True)
-        plt.title('Y-Axis vibration vs Throttle')
+            if 'power' in data_key:
+                """ p_v_x, = ax_v_x.plot(xdata, self.featureData['power']['rms']['voltage'], color='C1')
+                ax_v_x.yaxis.tick_right()
+                ax_v_x.set_ylim([0,15])
+                ax_v_x.set_xlim([100,1800])
+                ax_v_x.set_xticks(np.arange(100, 1800, 100)) """
 
-        # Subplot 3 : Z
-        plt.subplot(313)
-        plt.plot(xdata, self.featureData[data_key][feature_key]['z'])
-        plt.gca().xaxis.set_major_locator(plt.MultipleLocator(5))
-        plt.grid(True)
-        plt.title('Z-Axis vibration vs Throttle')
+                p_i_x, = ax_i_x.plot(xdata, self.featureData['power']['rms']['current'], color='C2')
+                ax_i_x.yaxis.tick_right()
+                ax_i_x.set_ylim([0,10000])
+                ax_i_x.set_xlim([100,1800])
+                ax_i_x.set_xticks(np.arange(100, 1800, 100))
 
+            ax_vib_x.grid(True)
+
+            # Subplot 2
+            p_vib_y, = ax_vib_y.plot(xdata, self.featureData['vibration'][feature_key]['y'], color='C0')
+            ax_vib_y.set_ylabel('RMS Vibration - Y', color='C0')
+            ax_vib_y.set_ylim([0,20])
+            ax_vib_y.set_xlim([100,1800])
+            ax_vib_y.set_xticks(np.arange(100, 1800, 100))
+
+            if 'power' in data_key:
+                """ p_v_y, = ax_v_y.plot(xdata, self.featureData['power']['rms']['voltage'], color='C1')
+                ax_v_y.yaxis.tick_right()
+                ax_v_y.set_ylim([0,15])
+                ax_v_y.set_xlim([100,1800])
+                ax_v_y.set_xticks(np.arange(100, 1800, 100)) """
+
+                p_i_y, = ax_i_y.plot(xdata, self.featureData['power']['rms']['current'], color='C2')
+                ax_i_y.yaxis.tick_right()
+                ax_i_y.set_ylim([0,10000])
+                ax_i_y.set_xlim([100,1800])
+                ax_i_y.set_xticks(np.arange(100, 1800, 100))
+
+            ax_vib_y.grid(True)
+
+            # Subplot 2
+            p_vib_z, = ax_vib_z.plot(xdata, self.featureData['vibration'][feature_key]['z'], color='C0')
+            ax_vib_z.set_ylabel('RMS Vibration - Z', color='C0')
+            ax_vib_z.set_ylim([0,20])
+            ax_vib_z.set_xlim([100,1800])
+            ax_vib_z.set_xticks(np.arange(100, 1800, 100))
+
+            if 'power' in data_key:
+                """ p_v_z, = ax_v_z.plot(xdata, self.featureData['power']['rms']['voltage'], color='C1')
+                ax_v_z.yaxis.tick_right()
+                ax_v_z.set_ylim([0,15])
+                ax_v_z.set_xlim([100,1800])
+                ax_v_z.set_xticks(np.arange(100, 1800, 100)) """
+
+                p_i_z, = ax_i_z.plot(xdata, self.featureData['power']['rms']['current'], color='C2')
+                ax_i_z.yaxis.tick_right()
+                ax_i_z.set_ylim([0,10000])
+                ax_i_z.set_xlim([100,1800])
+                ax_i_z.set_xticks(np.arange(100, 1800, 100))
+
+            ax_vib_z.grid(True)
+
+        ax_vib_x.legend((p_vib_x, p_i_x), ('RMS-X','Current'), loc='upper right')
+        ax_vib_y.legend((p_vib_y, p_i_y), ('RMS-Y','Current'), loc='upper right')
+        ax_vib_z.legend((p_vib_z, p_i_z), ('RMS-Z','Current'), loc='upper right')
+
+        dstr = self.data_dir.split('-')
+        propNum = dstr[-3]
+        if dstr[-1] == 'nooffset/':
+            offsetType = 'No Offset'
+        elif dstr[-1] == 'offset/':
+            offsetType = 'Offset'
+        else:
+            offsetType = dstr[-1].title()
+
+        plt.suptitle('Vibration and Power over Throttle (' + offsetType + ' - ' + propNum + ')')
         plt.show()
 
 
-if __name__ == "__main__":
-    Dataset = StaticData(data_dir='D:/Cloud/Google Drive/Tugas Akhir/data/accel-vi-data-cont/', data_type='accel-power-cont')
-    Dataset.loadDataset(data_key=['vibration'], feature_key=['rms','kurtosis','skewness','crest','p2p'])
-    #Dataset.saveFeatureData(filename=('static_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
-    Dataset.loadFeatureData(filename='static_20_07_19_00_17_09.pkl')
-    #print(Dataset.featureData)
-    Dataset.plotSimple(data_key='vibration', feature_key='rms')
 
-    #Dataset.plotSimple(data_key='power', feature_key='rms')
-    #Dataset.plotSweep(feature_key='rms')
+if __name__ == "__main__":
+    filenameFormat = 'static_sweep_im_{}.csv'
+    dataDir = 'C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im5'
+    dataDirList = [
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im0',0),
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im1',1),
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im2',2),
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im3',3),
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im4',4),
+        ('C:/Users/rss75/Documents/GitHub/ta-shop/data-acq/accel-vi-data-varspeed-8045-2-im5',5),
+    ]
+    datasetDir = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/vib-static/dump/sweep-im/'
+
+    for data in dataDirList:
+        print('\n\n-----------------------')
+        print('Processing', data[0].split('/')[-1])
+
+        filename = filenameFormat.format(data[1])
+        Dataset = StaticData(data_dir=data[0], dataset_dir=datasetDir, data_type='accel-power-sweep')
+        Dataset.loadDataset(data_key=['vibration', 'power'], feature_key=['rms','kurtosis','skewness','crest-factor','peak-to-peak'])
+        Dataset.saveToCSV(filename=datasetDir + filename, step_num=data[1])
+    #Dataset.saveFeatureData(filename=(datasetDir + 'static_sweep_' + datetime.now().strftime('%y_%m_%d_%H_%M_%S') + '.pkl'))
+    #Dataset.loadFeatureData()
+
+
+    #Dataset.plotSimple(data_key=['vibration','power'], feature_key='rms')
+    Dataset.plotSweep(data_key=['vibration','power'], feature_key='rms')
