@@ -2,8 +2,9 @@
     TO DO:
     [v] Nav, Vib aggregation split timestamp delta spike into smaller
         - Dynamic split by window size
-    [ ] Output data aggregation into RNN-LSTM compatible dimension
+    [v] Output data aggregation into RNN-LSTM compatible dimension
     [ ] Merge training data by all description
+    [v] Formal plot
 
 '''
 
@@ -733,6 +734,22 @@ class NavData:
 
         return pwmArray
 
+    
+    def getAltitudeArray(self, active_id):
+        objArray = self.activeDataArray[active_id]['data']
+
+        altitudeArray = [obj['navdata']['altitude'] for obj in objArray]
+
+        return altitudeArray
+
+    
+    def getControlStateArray(self, active_id):
+        objArray = self.activeDataArray[active_id]['data']
+
+        controlStateArray = [obj['state']['controlState'] for obj in objArray]
+
+        return controlStateArray
+
 
     def getMultiFeatureArray(self, active_id):
         '''
@@ -1337,129 +1354,129 @@ class NavdataVib:
         return aggArray
 
     
-def combineArray(pwmdata, vibdata):
-    '''
-        Combine based on smallest timestamp delta
-        (Currently pwmdata to match vibdata timestamp)
+    def combineArray(pwmdata, vibdata):
+        '''
+            Combine based on smallest timestamp delta
+            (Currently pwmdata to match vibdata timestamp)
 
-        Input format:
-        pwmdata = [[timestamp,...], [pwm,...]]
-        vibdata = [[timestamp,...], [[vib.x,...],...]]
+            Input format:
+            pwmdata = [[timestamp,...], [pwm,...]]
+            vibdata = [[timestamp,...], [[vib.x,...],...]]
 
-        Return format:
-        [timestamp, pwm, vibx, viby, vibz]
-    '''
+            Return format:
+            [timestamp, pwm, vibx, viby, vibz]
+        '''
 
-    tsPWM = pwmdata[0]
-    tsVib = vibdata[0]
-    pwmArray = pwmdata[1]
-    vibArray = vibdata[1]
+        tsPWM = pwmdata[0]
+        tsVib = vibdata[0]
+        pwmArray = pwmdata[1]
+        vibArray = vibdata[1]
 
-    # Check for data duplication
-    tsPWMUnique = []
-    tsPWMUnique = [tsPWMUnique.append(ts) for ts in tsPWM if ts not in tsPWMUnique] 
-    tsVibUnique = []
-    tsVibUnique = [tsVibUnique.append(ts) for ts in tsVib if ts not in tsVibUnique]
-    
-    # PWMData duplicate (most likely)
-    if len(tsPWMUnique) != len(tsPWM):
-        print('Duplicated data (PWM)! {} -> {}'.format(len(tsPWMUnique), len(tsPWM)))
-        tsPWM = tsPWM[:len(tsPWMUnique)]
-        pwmArray = pwmArray[:len(tsPWMUnique)]
-    
-    # Vibdata duplicate (not likely, but ok)
-    if len(tsVibUnique) != len(tsVib):
-        print('Duplicated data (Vib)!')
+        # Check for data duplication
+        tsPWMUnique = []
+        tsPWMUnique = [tsPWMUnique.append(ts) for ts in tsPWM if ts not in tsPWMUnique] 
+        tsVibUnique = []
+        tsVibUnique = [tsVibUnique.append(ts) for ts in tsVib if ts not in tsVibUnique]
+        
+        # PWMData duplicate (most likely)
+        if len(tsPWMUnique) != len(tsPWM):
+            print('Duplicated data (PWM)! {} -> {}'.format(len(tsPWMUnique), len(tsPWM)))
+            tsPWM = tsPWM[:len(tsPWMUnique)]
+            pwmArray = pwmArray[:len(tsPWMUnique)]
+        
+        # Vibdata duplicate (not likely, but ok)
+        if len(tsVibUnique) != len(tsVib):
+            print('Duplicated data (Vib)!')
 
 
-    # Get average timestamp
-    tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
-    tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
+        # Get average timestamp
+        tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
+        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
 
-    print('tsPWM: {} | tsVib: {}'.format(tsPWMAvg, tsVibAvg))
-    print('tsPWM: {} - {}'.format(min(tsPWM), max(tsPWM)))
-    print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
-    
-    # Interpolate PWM data into Vib data
-    if tsVibAvg < tsPWMAvg:
-        newPWMArray = []
+        print('tsPWM: {} | tsVib: {}'.format(tsPWMAvg, tsVibAvg))
+        print('tsPWM: {} - {}'.format(min(tsPWM), max(tsPWM)))
+        print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
+        
+        # Interpolate PWM data into Vib data
+        if tsVibAvg < tsPWMAvg:
+            newPWMArray = []
 
-        for ts in tsVib:
+            for ts in tsVib:
 
-            # Vibration data traversal
-            i = len(tsPWM) - 1
-            while tsPWM[i] > ts:
-                i -= 1
-            #print('idx:', i, end='\r')
+                # Vibration data traversal
+                i = len(tsPWM) - 1
+                while tsPWM[i] > ts:
+                    i -= 1
+                #print('idx:', i, end='\r')
+                
+                # Append inrange data into new pwm array
+                newPWMArray.append(pwmArray[i])
+
+            # Restructure data
+            combinedArray = []
+            for i in range(len(tsVib)):
+                combinedArray.append([
+                    tsVib[i]-tsVib[0],
+                    newPWMArray[i],
+                    [
+                        vibArray[0][i],
+                        vibArray[1][i],
+                        vibArray[2][i]
+                    ]
+                ])
+
+        # Interpolate vib data into PWM data
+        elif tsPWMAvg < tsVibAvg:
+            # Special case: trim boundary data from tsPWM and pwmArray
+            startTrim = 0
+            while tsPWM[startTrim] < tsVib[0]:
+                startTrim += 1
+
+            stopTrim = -1
+            while tsPWM[stopTrim] > tsVib[-1]:
+                stopTrim -= 1
             
-            # Append inrange data into new pwm array
-            newPWMArray.append(pwmArray[i])
+            tsPWM = tsPWM[startTrim:stopTrim]
+            pwmArray = pwmArray[startTrim:stopTrim]
 
-        # Restructure data
-        combinedArray = []
-        for i in range(len(tsVib)):
-            combinedArray.append([
-                tsVib[i]-tsVib[0],
-                newPWMArray[i],
-                [
-                    vibArray[0][i],
-                    vibArray[1][i],
-                    vibArray[2][i]
-                ]
-            ])
+            newVibArray = [[],[],[]]
 
-    # Interpolate vib data into PWM data
-    elif tsPWMAvg < tsVibAvg:
-        # Special case: trim boundary data from tsPWM and pwmArray
-        startTrim = 0
-        while tsPWM[startTrim] < tsVib[0]:
-            startTrim += 1
-
-        stopTrim = -1
-        while tsPWM[stopTrim] > tsVib[-1]:
-            stopTrim -= 1
-        
-        tsPWM = tsPWM[startTrim:stopTrim]
-        pwmArray = pwmArray[startTrim:stopTrim]
-
-        newVibArray = [[],[],[]]
-
-        for ts in tsPWM:
-            i = 0
-            try:
-                while tsVib[i] < ts:
-                    i += 1
-            except:
-                print(i, ':', tsVib[i-1], '<', ts)
-                sys.exit()
+            for ts in tsPWM:
+                i = 0
+                try:
+                    while tsVib[i] < ts:
+                        i += 1
+                except:
+                    print(i, ':', tsVib[i-1], '<', ts)
+                    sys.exit()
 
 
-            # Append inrange data into new pwm array
-            newVibArray[0].append(vibArray[0][i])
-            newVibArray[1].append(vibArray[1][i])
-            newVibArray[2].append(vibArray[2][i])
-        
-        # Debug
-        #print(len(newVibArray[0]), newVibArray[0][:5])
-        #print(len(newVibArray[1]), newVibArray[1][:5])
-        #print(len(newVibArray[2]), newVibArray[2][:5])
+                # Append inrange data into new pwm array
+                newVibArray[0].append(vibArray[0][i])
+                newVibArray[1].append(vibArray[1][i])
+                newVibArray[2].append(vibArray[2][i])
+            
+            # Debug
+            #print(len(newVibArray[0]), newVibArray[0][:5])
+            #print(len(newVibArray[1]), newVibArray[1][:5])
+            #print(len(newVibArray[2]), newVibArray[2][:5])
 
-        # Restructure data
-        combinedArray = []
-        for i in range(len(tsPWM)):
-            combinedArray.append([
-                tsPWM[i]-tsPWM[0],
-                pwmArray[i],
-                [
-                    newVibArray[0][i],
-                    newVibArray[1][i],
-                    newVibArray[2][i]
-                ]
-            ])
+            # Restructure data
+            combinedArray = []
+            for i in range(len(tsPWM)):
+                combinedArray.append([
+                    tsPWM[i]-tsPWM[0],
+                    pwmArray[i],
+                    [
+                        newVibArray[0][i],
+                        newVibArray[1][i],
+                        newVibArray[2][i]
+                    ]
+                ])
 
-        #print('Combined data result: {} | {}'.format(len(newVibArray[0]), len(tsPWM)))
-        # combinedArray = [tsVib, newPWMArray, *vibArray]
-        return combinedArray
+            #print('Combined data result: {} | {}'.format(len(newVibArray[0]), len(tsPWM)))
+            # combinedArray = [tsVib, newPWMArray, *vibArray]
+            return combinedArray
         
     
     def combineAggregatedArray(self, navdata_agg, vibdata_agg, time_window=None):
@@ -1836,18 +1853,167 @@ def combineArray(pwmdata, vibdata):
         plt.grid(True)
         plt.show()
 
+    
+    def plotRawCombined(self, combined_data, data_key, idx, plot_title, max_ts=None):
+        '''
+            Plot raw data from combined multi feature data
+            Black and White graph (optimized for final report)
+
+            Compatible feed function:
+            - NavdataVib.combineDataMultiFeature
+                - NavData.getMultiFeatureArray
+                - VibData.getMultiFeatureArray
+
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    pwm: [mot1,mot2,mot3,mot4],
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mpu1: [x,y,z],
+                    mpu2: [x,y,z],
+                }
+
+            ---------------
+            Argument format:
+            ---------------
+            combined_data: input format
+            key: key of dict from combined_data
+            idx: array index (to select axis) from combined_data[key]
+        '''
+
+        # Set font to Times New Roman
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        # Get timestamp array
+        xData = [(data['timestamp'] - combined_data[0]['timestamp']) for data in combined_data]
+        yData = [data[data_key][idx] for data in combined_data]
+        print(xData[-1])
+
+        # Slice until max timestamp supplied in arg
+        if (max_ts != None) and (max_ts < xData[-1]):
+            xDataNew = []
+
+            i = 0
+            while True:
+                if xData[i] > max_ts:
+                    break
+                xDataNew.append(xData[i])
+                i += 1
+
+            xData = xDataNew
+
+            yData = yData[:i]
+
+        # Set x-axis limit and ticks
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        # Set y-axis limit and ticks
+        if data_key == 'pwm':
+            ylim = [0,280]  # pwm
+            yticks = list(range(0,280,100))
+            ylabel = 'PWM'
+
+        if data_key == 'orientation':
+            if idx == 0:
+                ylabel = 'Roll (deg)'
+            if idx == 1:
+                ylabel = 'Pitch (deg)'
+            if idx == 2:
+                ylabel = 'Yaw (deg)'
+            ylim = [-180,180]  # orientation.roll
+            yticks = list(range(-180,181,90))
+
+        if data_key == 'mpu1' or data_key == 'mpu2':
+            if idx == 0:
+                ylabel = 'Akselerasi (g)'
+            if idx == 1:
+                ylabel = 'Akselerasi (g)'
+            if idx == 2:
+                ylabel = 'Akselerasi (g)'
+            ylim = [-16,16]  # orientation.roll
+            yticks = list(range(-16,17,8))
+
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        ax1 = fig.add_subplot(111, frame_on=True)
+
+        p1, = ax1.plot(xData, yData, 'k-', linewidth=1)
+        ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+        ax1.set_xticks(xticks)
+        ax1.set_xlim(xlim)
+        ax1.set_yticks(yticks)
+        ax1.set_ylim(ylim)
+        ax1.grid(True)
+        ax1.set_title(plot_title, fontsize=22)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_ylabel(ylabel, fontsize=22)
+
+        """ ax2 = fig.add_subplot(111, frame_on=False)
+        p2, = ax2.plot(xData, yData, 'k-', linewidth=2)
+        ax2.set_xticks(list(range(0,21,2)))
+        ax2.set_xlim(xlim)
+        ax2.set_ylim([0,100])
+        ax2.grid(True) """
+
+        """ ax1.legend(
+            (p1,p2),
+            ('Plot 1', 'Plot 2'),
+            loc='upper right',
+            fontsize=16
+        ) """
+
+        plt.show()
+
+    
+    def plotAltitude(self, nav_id, max_ts=None):
+
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        xData = self.getTimestampArray(nav_id)
+        xData = [x - xData[0] for x in xData]
+        yData = self.getAltitudeArray(nav_id)
+
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        ax1 = fig.add_subplot(111, frame_on=True)
+
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        ylim = [0,1.5]  # orientation.roll
+        yticks = [0,0.5,1,1.5]
+        ylabel = 'Ketinggian (m)'
+
+        p1, = ax1.plot(xData, yData, 'k-', linewidth=1)
+        ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+        ax1.set_xticks(xticks)
+        ax1.set_xlim(xlim)
+        ax1.set_yticks(yticks)
+        ax1.set_ylim(ylim)
+        ax1.grid(True)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_ylabel(ylabel, fontsize=22)
+
+        plt.show()
+
 
 ##### Driver #####
 if __name__ == '__main__':
     ### Parameter ###
-    queryDescription = 'aug9_0_hover10s.json'
+    queryDescription = 'aug9_0_hover30s_5.json'
     plotVibAxis = ['x','y','z']
     stepWeight = 0.1
-    windowSize = 50
-    weight = np.arange(stepWeight, stepWeight*(windowSize+1), stepWeight)
+    windowSize = 200
     
-    #weight = np.power(weight, 2)
-
     ### Object Declaration ###
     Vib = VibData()
     Nav = NavData()
@@ -1856,92 +2022,6 @@ if __name__ == '__main__':
     # List description
     #print('List description:', Nav.listDescriptionTimestamp()[1:])
 
-    # Load navigation data by timestamp
-    """ desc_id_nav = Nav.storeData(Nav.getByDescription(description=queryDescription, landed=True), 'test by description')
-
-    # Load vibration data by same timestamp range as navidation data
-    tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
-    print('tstart {} tstop {}'.format(tstart, tstop))
-    desc_id_vib = Vib.storeData(Vib.getBetweenTimestamp(tstart, tstop), 'test between timestamp')
-    #Vib.plotDataMultiMovingRMS(Vib.getTimestampArray(desc_id_vib), Vib.getVibArray(desc_id_vib), 10)
-
-    # Plotting
-    # Raw
-    label = ['New Motor', 'Old Motor', 'Motor3', 'Motor4']
-    #Nav.plotDataMulti(Nav.getPWMArray(desc_id_nav), label)
-    label = ['New Motor - X', 'New Motor - Y', 'New Motor - Z', 'Old Motor- X', 'Old Motor- Y', 'Old Motor- Z']
-    #Vib.plotDataMulti(Vib.getVibArray(desc_id_vib), label)
-    #Vib.plotTimedelta(desc_id_vib)
-    Nav.plotTimedelta(desc_id_nav) """
-
-    """ Vib.plotDataMultiMovingRMS(
-        time_array=Vib.getTimestampArray(desc_id_vib),
-        data_array=Vib.getVibArray(desc_id_vib),
-        window_size=windowSize,
-        label=label
-    ) """
-    #Vib.plotDataMulti(Vib.getMovingRMSWeightedArray(Vib.getVibArray(desc_id_vib), windowSize, weight), label)
-
-    """ movingTs = Vib.getMovingTimestampArray(Vib.getTimestampArray(desc_id_vib), windowSize)
-    movingVibRMS = Vib.getMovingRMSWeightedArray(Vib.getVibArray(desc_id_vib), windowSize, weight)
-
-    plt.subplot(211)
-    plt.title('New Motor')
-    plt.plot(movingTs, movingVibRMS[0])
-    plt.plot(movingTs, movingVibRMS[1])
-    plt.plot(movingTs, movingVibRMS[2])
-    plt.ylim(0,16)
-    plt.grid(True)
-
-    plt.subplot(212)
-    plt.title('Old Motor')
-    plt.plot(movingTs, movingVibRMS[3])
-    plt.plot(movingTs, movingVibRMS[4])
-    plt.plot(movingTs, movingVibRMS[5])
-    plt.ylim(0,16)
-    plt.grid(True)
-
-    plt.show() """
-
-    ##### Navdatavib #####
-    """ NV = NavdataVib()
-    NV.getTimestampAnalysis(
-        navdata=Nav.getPWMArray(desc_id_nav),
-        vibdata=Vib.getVibArray(desc_id_vib)
-    )
-    NV.plotNavdataVibTimestamp(
-        navdata=([Nav.getTimestampArray(desc_id_nav)] + Nav.getPWMArray(desc_id_nav)),
-        vibdata=(
-            [Vib.getMovingTimestampArray(Vib.getTimestampArray(desc_id_vib), windowSize)] 
-            + Vib.getMovingRMSWeightedArray(Vib.getVibArray(desc_id_vib), windowSize, weight)
-        ),
-        axis=['x','y','z']
-    ) """
-
-    """ NV.plotNavdataVibAggregated(
-        navdata_agg = Nav.getPWMAggregatedArray(desc_id_nav, windowSize),
-        vibdata_agg = Vib.getVibAggregatedArray(desc_id_vib, windowSize),
-        axis=['x','y','z'],
-        time_window=windowSize
-    ) """
-
-
-    """ NV.plotNav(
-        navdata=([Nav.getTimestampArray(desc_id_nav)] + Nav.getPWMArray(desc_id_nav)),
-        vibdata=(
-            [Vib.getTimestampArray(desc_id_vib)] 
-            + Vib.getVibArray(desc_id_vib)
-        ),
-        axis=['y']
-    ) """
-
-
-    """ ### Timestamp sync ###
-    NV.getTimestampAnalysis(
-        navdata=([Nav.getTimestampArray(desc_id_nav)]),
-        vibdata=([Vib.getTimestampFilledArray(desc_id_vib)])
-    ) """
-
     # Get timestamp range
     tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
 
@@ -1949,22 +2029,23 @@ if __name__ == '__main__':
     navId = Nav.storeData(Nav.getByDescription(description=queryDescription, landed=True), 'test by description')
     vibId = Vib.storeData(Vib.getBetweenTimestamp(tstart, tstop), 'test between timestamp')
 
+    # Combine data
     navMultiArray = Nav.getMultiFeatureArray(navId)
     vibMultiArray = Vib.getMultiFeatureArray(vibId)
-
-    print('navmulti', len(navMultiArray))
-    print('vibmulti', len(vibMultiArray))
-
     combinedMultiArray = NV.combineDataMultiFeature(
         navdata=navMultiArray,
         vibdata=vibMultiArray
     )
 
-    # Plot sample
-    plt.plot(list(range(len(combinedMultiArray))), [data['pwm'][0] for data in combinedMultiArray])
-    plt.plot(list(range(len(combinedMultiArray))), [data['mpu1'][0] for data in combinedMultiArray])
-    plt.grid(True)
-    plt.show()
+    # Print unique control state values
+    csArray = Nav.getControlStateArray(navId)
+    print(*list(set(csArray)), sep='\n')
 
 
-    print('combmulti', len(combinedMultiArray))
+    NV.plotRawCombined(
+        combined_data=combinedMultiArray,
+        data_key='mpu1',
+        idx=2,
+        plot_title='Akselerasi (z) Motor 1',
+        max_ts=40000
+    )

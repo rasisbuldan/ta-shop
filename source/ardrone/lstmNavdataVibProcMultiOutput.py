@@ -25,7 +25,7 @@ from datetime import datetime
 
 # Dataset Preparation
 nTest = 3
-timeWindow = 200    # in ms
+timeWindow = 250    # in ms
 
 
 featureName = [
@@ -55,9 +55,9 @@ featureName = [
 
 # LSTM
 nSequence = 8
-nFeatureInput = 1   # pwm1, pitch, roll, yaw, acc.x, acc.y, acc.z
+nFeatureInput = 4   # pwm1, pitch, roll, yaw, acc.x, acc.y, acc.z
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
-epochNum = 50
+epochNum = 500
 
 ###################################################
 ################## Data Filtering #################
@@ -75,7 +75,7 @@ discardDesc = [
     'aug9_hover30s_calib0.json',
     'aug9_3_hover10s.json'
 ]
-filterDesc = ['aug9', 'aug10', 'aug11'] # jul_29
+filterDesc = ['aug9_0_h'] # jul_29
 
 
 ### Dataset split ###
@@ -298,7 +298,9 @@ def getSequenceArray(dataset, n_sequence, n_feature):
             # Add input feature array
             featureArrInput = np.array([
                 dataArr[nd+ns]['mot1']['pwm'],                      # 0
-                
+                dataArr[nd+ns]['orientation'][0],
+                dataArr[nd+ns]['orientation'][1],
+                dataArr[nd+ns]['orientation'][2],
             ]).reshape(1,n_feature[0])
 
             """ dataArr[nd+ns]['orientation'][0],
@@ -382,6 +384,11 @@ print('Input:', testDatasetInput.shape)
 print('Output:', testDatasetOutput.shape)
 print('\n')
 
+cont = input('Continue train dataset? [y/n] ')
+if cont != 'y':
+    sys.exit()
+
+
 
 """ plt.plot(list(range(testDatasetOutput.shape[0])), testDatasetInput[:,0,0], color='C0')
 plt.plot(list(range(nSequence, nSequence + testDatasetOutput.shape[0])), testDatasetOutput[:,0], color='C1')
@@ -420,7 +427,7 @@ def createModel(early_stop=True, checkpoint=True):
     addOns = []
 
     if early_stop:
-        addOns.append(EarlyStopping(monitor='mean_squared_error', patience=6, verbose=0, mode='min'))
+        addOns.append(EarlyStopping(monitor='mean_squared_error', patience=30, verbose=0, mode='min'))
 
     if checkpoint:
         addOns.append(ModelCheckpoint('.mdl_wts.hdf5', save_best_only=True, monitor='mean_squared_error', mode='min'))
@@ -464,7 +471,7 @@ if train:
             )
 
             # Fit model
-            model.fit(trainDatasetInput, trainDatasetOutput[:,outFeatureNum], epochs=epochNum, callbacks=[*addOns], batch_size=128, verbose=1)
+            model.fit(trainDatasetInput, trainDatasetOutput[:,outFeatureNum], epochs=epochNum, callbacks=[*addOns], batch_size=64, verbose=1)
 
             # Export model
             exportModel(model, outFeatureNum)
