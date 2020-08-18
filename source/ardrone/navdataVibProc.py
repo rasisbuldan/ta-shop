@@ -16,6 +16,8 @@ import time
 import collections
 import scipy.stats
 import sys
+from datetime import datetime
+import os
 
 
 class VibData:
@@ -1032,6 +1034,13 @@ class NavdataVib:
         tsNavAvg = (max(tsNav) - min(tsNav)) / len(tsNav)
         tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
 
+        print('tsNav', len(tsNav))
+        print('tsVib', len(tsVib))
+
+        #print('tsPWM: {} | tsVib: {}'.format(tsNavAvg, tsVibAvg))
+        #print('tsPWM: {} - {}'.format(min(tsNav), max(tsNav)))
+        #print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
+
         if self.verbose:
             print('tsPWM: {} | tsVib: {}'.format(tsNavAvg, tsVibAvg))
             print('tsPWM: {} - {}'.format(min(tsNav), max(tsNav)))
@@ -1151,10 +1160,11 @@ class NavdataVib:
             ---------------
             list of dict
                 {
+                    timestamp,
                     orientation: [roll,pitch,yaw],
                     rawAccel: [x,y,z],
                     mot1: {
-                        'pwm': 0,
+                        'pwm',
                         'rms': [x,y,z],
                         'kurtosis': [x,y,z],
                         'skewness': [x,y,z],
@@ -1162,7 +1172,7 @@ class NavdataVib:
                         'peak-to-peak': [x,y,z],
                     },
                     mot2: {
-                        'pwm': 0,
+                        'pwm',
                         'rms': [x,y,z],
                         'kurtosis': [x,y,z],
                         'skewness': [x,y,z],
@@ -1210,6 +1220,7 @@ class NavdataVib:
 
                 # Empty dictionary format
                 aggData = {
+                    'timestamp': timeCursor,
                     'orientation': [0,0,0],
                     'rawAccel': [0,0,0],
                     'mot1': {
@@ -1352,131 +1363,6 @@ class NavdataVib:
 
 
         return aggArray
-
-    
-    def combineArray(pwmdata, vibdata):
-        '''
-            Combine based on smallest timestamp delta
-            (Currently pwmdata to match vibdata timestamp)
-
-            Input format:
-            pwmdata = [[timestamp,...], [pwm,...]]
-            vibdata = [[timestamp,...], [[vib.x,...],...]]
-
-            Return format:
-            [timestamp, pwm, vibx, viby, vibz]
-        '''
-
-        tsPWM = pwmdata[0]
-        tsVib = vibdata[0]
-        pwmArray = pwmdata[1]
-        vibArray = vibdata[1]
-
-        # Check for data duplication
-        tsPWMUnique = []
-        tsPWMUnique = [tsPWMUnique.append(ts) for ts in tsPWM if ts not in tsPWMUnique] 
-        tsVibUnique = []
-        tsVibUnique = [tsVibUnique.append(ts) for ts in tsVib if ts not in tsVibUnique]
-        
-        # PWMData duplicate (most likely)
-        if len(tsPWMUnique) != len(tsPWM):
-            print('Duplicated data (PWM)! {} -> {}'.format(len(tsPWMUnique), len(tsPWM)))
-            tsPWM = tsPWM[:len(tsPWMUnique)]
-            pwmArray = pwmArray[:len(tsPWMUnique)]
-        
-        # Vibdata duplicate (not likely, but ok)
-        if len(tsVibUnique) != len(tsVib):
-            print('Duplicated data (Vib)!')
-
-
-        # Get average timestamp
-        tsPWMAvg = (max(tsPWM) - min(tsPWM)) / len(tsPWM)
-        tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
-
-        print('tsPWM: {} | tsVib: {}'.format(tsPWMAvg, tsVibAvg))
-        print('tsPWM: {} - {}'.format(min(tsPWM), max(tsPWM)))
-        print('tsVib: {} - {}'.format(min(tsVib), max(tsVib)))
-        
-        # Interpolate PWM data into Vib data
-        if tsVibAvg < tsPWMAvg:
-            newPWMArray = []
-
-            for ts in tsVib:
-
-                # Vibration data traversal
-                i = len(tsPWM) - 1
-                while tsPWM[i] > ts:
-                    i -= 1
-                #print('idx:', i, end='\r')
-                
-                # Append inrange data into new pwm array
-                newPWMArray.append(pwmArray[i])
-
-            # Restructure data
-            combinedArray = []
-            for i in range(len(tsVib)):
-                combinedArray.append([
-                    tsVib[i]-tsVib[0],
-                    newPWMArray[i],
-                    [
-                        vibArray[0][i],
-                        vibArray[1][i],
-                        vibArray[2][i]
-                    ]
-                ])
-
-        # Interpolate vib data into PWM data
-        elif tsPWMAvg < tsVibAvg:
-            # Special case: trim boundary data from tsPWM and pwmArray
-            startTrim = 0
-            while tsPWM[startTrim] < tsVib[0]:
-                startTrim += 1
-
-            stopTrim = -1
-            while tsPWM[stopTrim] > tsVib[-1]:
-                stopTrim -= 1
-            
-            tsPWM = tsPWM[startTrim:stopTrim]
-            pwmArray = pwmArray[startTrim:stopTrim]
-
-            newVibArray = [[],[],[]]
-
-            for ts in tsPWM:
-                i = 0
-                try:
-                    while tsVib[i] < ts:
-                        i += 1
-                except:
-                    print(i, ':', tsVib[i-1], '<', ts)
-                    sys.exit()
-
-
-                # Append inrange data into new pwm array
-                newVibArray[0].append(vibArray[0][i])
-                newVibArray[1].append(vibArray[1][i])
-                newVibArray[2].append(vibArray[2][i])
-            
-            # Debug
-            #print(len(newVibArray[0]), newVibArray[0][:5])
-            #print(len(newVibArray[1]), newVibArray[1][:5])
-            #print(len(newVibArray[2]), newVibArray[2][:5])
-
-            # Restructure data
-            combinedArray = []
-            for i in range(len(tsPWM)):
-                combinedArray.append([
-                    tsPWM[i]-tsPWM[0],
-                    pwmArray[i],
-                    [
-                        newVibArray[0][i],
-                        newVibArray[1][i],
-                        newVibArray[2][i]
-                    ]
-                ])
-
-            #print('Combined data result: {} | {}'.format(len(newVibArray[0]), len(tsPWM)))
-            # combinedArray = [tsVib, newPWMArray, *vibArray]
-            return combinedArray
         
     
     def combineAggregatedArray(self, navdata_agg, vibdata_agg, time_window=None):
@@ -1972,7 +1858,469 @@ class NavdataVib:
         plt.show()
 
     
+    def plotAggregateCombined(self, combined_agg, mot, data_key, idx, max_ts=None, save_only=False):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mot1: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    }
+                }
+
+            ---------------
+            Argument format:
+            ---------------
+            combined: input format
+            mot: motor number [mot1,mot2]
+            key: key of dict from combined_data
+            idx: array index (to select axis) from combined_data[key]
+                -> currently supported mot1
+        '''
+
+        # # Set font to Times New Roman
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        # Get timestamp array
+        xData = [(data['timestamp'] - combined_agg[0]['timestamp']) for data in combined_agg]
+        
+        # Get feature data array
+        if data_key == 'pwm':
+            yData = [data[mot][data_key] for data in combined_agg]
+        else:
+            yData = [data[mot][data_key][idx] for data in combined_agg]
+
+        # Slice until max timestamp supplied in arg
+        if (max_ts != None) and (max_ts < xData[-1]):
+            xDataNew = []
+
+            i = 0
+            while True:
+                if xData[i] > max_ts:
+                    break
+                xDataNew.append(xData[i])
+                i += 1
+
+            xData = xDataNew
+
+            yData = yData[:i]
+
+        # Set x-axis limit and ticks
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        # Set y-axis limit and ticks
+        if data_key == 'pwm':
+            ylim = [0,280]
+            yticks = list(range(ylim[0],ylim[1]+1,50))
+            ylabel = 'PWM'
+
+        if data_key == 'rms':
+            ylim = [0,20]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'RMS'
+        
+        if data_key == 'kurtosis':
+            ylim = [-10,30]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Kurtosis'
+
+        if data_key == 'skewness':
+            ylim = [-10,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Skewness'
+
+        if data_key == 'crest-factor':
+            ylim = [-5,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Crest Factor'
+
+        if data_key == 'peak-to-peak':
+            ylim = [0,40]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Peak-to-Peak'
+
+        if data_key != 'pwm':
+            if idx == 0:
+                ylabel = ylabel + ' (X)'
+            if idx == 1:
+                ylabel = ylabel + ' (Y)'
+            if idx == 2:
+                ylabel = ylabel + ' (Z)'
+
+        # Plot
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        ax1 = fig.add_subplot(111, frame_on=True)
+
+        p1, = ax1.plot(xData, yData, 'k-', linewidth=1.5)
+        ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+        ax1.set_xticks(xticks)
+        ax1.set_xlim(xlim)
+        ax1.set_yticks(yticks)
+        ax1.set_ylim(ylim)
+        ax1.grid(True)
+        #ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_ylabel(ylabel, fontsize=22)
+
+        if save_only:
+            plt.savefig(
+                fname=save_only + 
+                    predPlotFilename.format(
+                        timePlot,
+                        timeWindow,
+                        mot,
+                        timeWindow,
+                        data_key,
+                        idx)
+            )
+        else:
+            plt.show()
+
+    
+    def plotAggregateCombinedMotDiff(self, combined_agg, data_key, idx, max_ts=None, save_only=False):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            Print between two dataset
+
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mot1: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    }
+                }
+
+            ---------------
+            Argument format:
+            ---------------
+            combined: input format
+            mot: motor number [mot1,mot2]
+            key: key of dict from combined_data
+            idx: array index (to select axis) from combined_data[key]
+                -> currently supported mot1
+        '''
+
+        # # Set font to Times New Roman
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        # Get timestamp array
+        xData = [(data['timestamp'] - combined_agg[0]['timestamp']) for data in combined_agg]
+        
+        # Get feature data array
+        if data_key == 'pwm':
+            yData1 = [data['mot2'][data_key] for data in combined_agg]
+            yData2 = [data['mot1'][data_key] for data in combined_agg]
+        else:
+            yData1 = [data['mot1'][data_key][idx] for data in combined_agg]
+            yData2 = [data['mot2'][data_key][idx] for data in combined_agg]
+
+        # Slice until max timestamp supplied in arg
+        if (max_ts != None) and (max_ts < xData[-1]):
+            xDataNew = []
+
+            i = 0
+            while True:
+                if xData[i] > max_ts:
+                    break
+                xDataNew.append(xData[i])
+                i += 1
+
+            xData = xDataNew
+
+            yData1 = yData1[:i]
+            yData2 = yData2[:i]
+
+        # Set x-axis limit and ticks
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        # Set y-axis limit and ticks
+        if data_key == 'pwm':
+            ylim = [0,280]
+            yticks = list(range(ylim[0],ylim[1]+1,50))
+            ylabel = 'PWM'
+
+        if data_key == 'rms':
+            ylim = [0,20]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'RMS'
+        
+        if data_key == 'kurtosis':
+            ylim = [-10,30]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Kurtosis'
+
+        if data_key == 'skewness':
+            ylim = [-10,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Skewness'
+
+        if data_key == 'crest-factor':
+            ylim = [-5,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Crest Factor'
+
+        if data_key == 'peak-to-peak':
+            ylim = [0,40]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Peak-to-Peak'
+
+        if data_key != 'pwm':
+            if idx == 0:
+                ylabel = ylabel + ' (X)'
+            if idx == 1:
+                ylabel = ylabel + ' (Y)'
+            if idx == 2:
+                ylabel = ylabel + ' (Z)'
+
+        # Plot
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        ax1 = fig.add_subplot(111, frame_on=True)
+        ax2 = fig.add_subplot(111, frame_on=False)
+
+        p1, = ax1.plot(xData, yData1, 'k-', linewidth=1.5)
+        ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+        ax1.set_xticks(xticks)
+        ax1.set_xlim(xlim)
+        ax1.set_yticks(yticks)
+        ax1.set_ylim(ylim)
+        ax1.grid(True)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_ylabel(ylabel, fontsize=22)
+
+        p2, = ax2.plot(xData, yData2, 'r-', linewidth=1.5)
+        ax2.set_xticks([])
+        ax2.set_xlim(xlim)
+        ax2.set_yticks([])
+        ax2.set_ylim(ylim)
+
+        ax1.legend(
+            (p1,p2),
+            ('Normal', 'Abnormal'),
+            loc='upper left',
+            fontsize=18
+        )
+
+        if save_only:
+            plt.savefig(
+                fname=save_only + 
+                    predPlotFilename.format(
+                        timePlot,
+                        timeWindow,
+                        timeWindow,
+                        data_key,
+                        idx)
+            )
+        else:
+            plt.show()
+
+    
+    def plotAggregateCombinedMotDiff(self, combined_agg, data_key, idx, max_ts=None, save_only=False):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            Print between two dataset
+
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mot1: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    }
+                }
+
+            ---------------
+            Argument format:
+            ---------------
+            combined: input format
+            mot: motor number [mot1,mot2]
+            key: key of dict from combined_data
+            idx: array index (to select axis) from combined_data[key]
+                -> currently supported mot1
+        '''
+
+        # # Set font to Times New Roman
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        # Get timestamp array
+        xData = [(data['timestamp'] - combined_agg[0]['timestamp']) for data in combined_agg]
+        
+        # Get feature data array
+        if data_key == 'pwm':
+            yData1 = [data['mot2'][data_key] for data in combined_agg]
+            yData2 = [data['mot1'][data_key] for data in combined_agg]
+        else:
+            yData1 = [data['mot1'][data_key][idx] for data in combined_agg]
+            yData2 = [data['mot2'][data_key][idx] for data in combined_agg]
+
+        # Slice until max timestamp supplied in arg
+        if (max_ts != None) and (max_ts < xData[-1]):
+            xDataNew = []
+
+            i = 0
+            while True:
+                if xData[i] > max_ts:
+                    break
+                xDataNew.append(xData[i])
+                i += 1
+
+            xData = xDataNew
+
+            yData1 = yData1[:i]
+            yData2 = yData2[:i]
+
+        # Set x-axis limit and ticks
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        # Set y-axis limit and ticks
+        if data_key == 'pwm':
+            ylim = [0,280]
+            yticks = list(range(ylim[0],ylim[1]+1,50))
+            ylabel = 'PWM'
+
+        if data_key == 'rms':
+            ylim = [0,20]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'RMS'
+        
+        if data_key == 'kurtosis':
+            ylim = [-10,30]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Kurtosis'
+
+        if data_key == 'skewness':
+            ylim = [-10,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Skewness'
+
+        if data_key == 'crest-factor':
+            ylim = [-5,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Crest Factor'
+
+        if data_key == 'peak-to-peak':
+            ylim = [0,40]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Peak-to-Peak'
+
+        if data_key != 'pwm':
+            if idx == 0:
+                ylabel = ylabel + ' (X)'
+            if idx == 1:
+                ylabel = ylabel + ' (Y)'
+            if idx == 2:
+                ylabel = ylabel + ' (Z)'
+
+        # Plot
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        ax1 = fig.add_subplot(111, frame_on=True)
+        ax2 = fig.add_subplot(111, frame_on=False)
+
+        p1, = ax1.plot(xData, yData1, 'k-', linewidth=1.5)
+        ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+        ax1.set_xticks(xticks)
+        ax1.set_xlim(xlim)
+        ax1.set_yticks(yticks)
+        ax1.set_ylim(ylim)
+        ax1.grid(True)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_ylabel(ylabel, fontsize=22)
+
+        p2, = ax2.plot(xData, yData2, 'r-', linewidth=1.5)
+        ax2.set_xticks([])
+        ax2.set_xlim(xlim)
+        ax2.set_yticks([])
+        ax2.set_ylim(ylim)
+
+        ax1.legend(
+            (p1,p2),
+            ('Normal', 'Abnormal'),
+            loc='upper left',
+            fontsize=18
+        )
+
+        if save_only:
+            plt.savefig(
+                fname=save_only + 
+                    predPlotFilename.format(
+                        timePlot,
+                        timeWindow,
+                        timeWindow,
+                        data_key,
+                        idx)
+            )
+        else:
+            plt.show()
+
+    
     def plotAltitude(self, nav_id, max_ts=None):
+        '''
+            [!!!] Not finished
+        '''
 
         plt.rcParams["font.family"] = "Times New Roman"
 
@@ -1993,7 +2341,7 @@ class NavdataVib:
         yticks = [0,0.5,1,1.5]
         ylabel = 'Ketinggian (m)'
 
-        p1, = ax1.plot(xData, yData, 'k-', linewidth=1)
+        p1, = ax1.plot(xData, yData, 'k-', linewidth=0.5)
         ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
         ax1.set_xticks(xticks)
         ax1.set_xlim(xlim)
@@ -2005,14 +2353,206 @@ class NavdataVib:
 
         plt.show()
 
+    
+    def plotAggregateCombinedLoadDiff(self, dataset, data_key, idx, max_ts=None, save_only=False):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            Print between two dataset
+
+            ---------------
+            Input format:
+            ---------------
+            list of dict    -> stricted to 7 loadCount (0-6)
+                {
+                    'description',
+                    'loadCount',
+                    'combinedAgg',
+                    'shiftTime'     -> time shift to uniform takeoff starting time
+                }
+
+            'combinedAgg': list of dict
+                {
+                    timestamp,
+                    orientation: [roll,pitch,yaw],
+                    rawAccel: [x,y,z],
+                    mot1: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm',
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    }
+                }
+
+            ---------------
+            Argument format:
+            ---------------
+            dataset: input format
+            mot: motor number [mot1,mot2]
+            key: key of dict from combined_data
+            idx: array index (to select axis) from combined_data[key]
+                -> currently supported mot1
+            save_only: don't show plot
+        '''
+
+        print('Plotting Combined Load Diff')
+
+        # # Set font to Times New Roman
+        plt.rcParams["font.family"] = "Times New Roman"
+
+        xDataArr = []
+        yDataArr = []
+        for data in dataset:
+            combinedAgg = data['combinedAgg']
+            
+            # Get timestamp array
+            xData = [(comb['timestamp'] - combinedAgg[0]['timestamp']) for comb in combinedAgg]
+        
+            # Get feature data array
+            if data_key == 'pwm':
+                yData = [comb['mot1'][data_key] for comb in combinedAgg]
+            else:
+                yData = [comb['mot1'][data_key][idx] for comb in combinedAgg]
+
+            # Slice data until timestamp *max_ts* (unnecessary bc already plot range??)
+            """ if (max_ts != None) and (max_ts < xData[-1]):
+                xDataNew = []
+
+                # Get index not exceeding *max_ts*
+                i = len(xData)
+                while True:
+                    if xData[i] < max_ts:
+                        break
+                    i -= 1
+
+                # Slice array
+                xData = xData[:i]
+                yData = yData[:i]
+            """
+
+            # Insert into data array
+            xDataArr.append(xData)
+            yDataArr.append(yData)
+
+
+        # Set x-axis limit and ticks
+        xlim = [0, xData[-1]]
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+
+        # Set y-axis limit and ticks
+        if data_key == 'pwm':
+            ylim = [0,280]
+            yticks = list(range(ylim[0],ylim[1]+1,50))
+            ylabel = 'PWM'
+
+        if data_key == 'rms':
+            ylim = [0,20]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'RMS'
+        
+        if data_key == 'kurtosis':
+            ylim = [-10,30]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Kurtosis'
+
+        if data_key == 'skewness':
+            ylim = [-10,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Skewness'
+
+        if data_key == 'crest-factor':
+            ylim = [-5,10]
+            yticks = list(range(ylim[0],ylim[1]+1,5))
+            ylabel = 'Crest Factor'
+
+        if data_key == 'peak-to-peak':
+            ylim = [0,40]
+            yticks = list(range(ylim[0],ylim[1]+1,10))
+            ylabel = 'Peak-to-Peak'
+
+        if data_key != 'pwm':
+            if idx == 0:
+                ylabel = ylabel + ' (X)'
+            if idx == 1:
+                ylabel = ylabel + ' (Y)'
+            if idx == 2:
+                ylabel = ylabel + ' (Z)'
+
+        # Plot
+        fig = plt.figure(figsize=(16,8), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+        plt.get_current_fig_manager().window.state('zoomed')
+
+        axArr = [0,0,0,0,0,0,0]
+        for i in range(7):
+            if i == 0:
+                axArr[i] = fig.add_subplot(111, label=str(i), frame_on=True)
+            else:
+                axArr[i] = fig.add_subplot(111, label=str(i), frame_on=False)
+
+        pArr = []
+
+        # 7 line
+        for i in range(7):
+            p, = axArr[i].plot(xDataArr[i], yDataArr[i], linewidth=0.5, color='C' + str(i))
+            
+            if i == 0:
+                axArr[i].tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+                axArr[i].set_xticks(xticks)
+                axArr[i].set_xlim(xlim)
+                axArr[i].set_yticks(yticks)
+                axArr[i].set_ylim(ylim)
+                axArr[i].grid(True)
+                axArr[i].set_xlabel('Waktu (ms)', fontsize=22)
+                axArr[i].set_ylabel(ylabel, fontsize=22)
+
+            else:
+                axArr[i].set_xticks([])
+                axArr[i].set_xlim(xlim)
+                axArr[i].set_yticks([])
+                axArr[i].set_ylim(ylim)
+
+            pArr.append(p)
+
+        axArr[0].legend(
+            tuple(pArr),
+            tuple([('Load '+str(i)) for i in range(7)]), #('0','1','2','3','4','5','6'),         
+            loc='upper right',
+            fontsize=14
+        )
+
+        if save_only:
+            plt.savefig(
+                fname=save_only + 
+                    predPlotFilename.format(
+                        timePlot,
+                        timeWindow,
+                        timeWindow,
+                        data_key,
+                        idx)
+            )
+        else:
+            plt.show()
+
 
 ##### Driver #####
 if __name__ == '__main__':
     ### Parameter ###
     queryDescription = 'aug9_0_hover30s_5.json'
+    dataSaveDir = 'D:/Cloud/Google Drive/Tugas Akhir/Laporan/plot/load-diff'
+    predPlotFilename = '/{}_{}_loaddiff/plot_pred_{}_{}_{}.svg'
     plotVibAxis = ['x','y','z']
     stepWeight = 0.1
-    windowSize = 200
+    timeWindow = 2000
     
     ### Object Declaration ###
     Vib = VibData()
@@ -2036,16 +2576,127 @@ if __name__ == '__main__':
         navdata=navMultiArray,
         vibdata=vibMultiArray
     )
+    combinedAgg = NV.aggregateCombined(
+        combined_data=combinedMultiArray,
+        time_window=timeWindow
+    )
 
     # Print unique control state values
-    csArray = Nav.getControlStateArray(navId)
-    print(*list(set(csArray)), sep='\n')
+    #csArray = Nav.getControlStateArray(navId)
+    #print(*list(set(csArray)), sep='\n')
 
-
-    NV.plotRawCombined(
+    """ NV.plotRawCombined(
         combined_data=combinedMultiArray,
         data_key='mpu1',
         idx=2,
         plot_title='Akselerasi (z) Motor 1',
         max_ts=40000
+    ) """
+    timePlot = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
+    os.mkdir(os.path.join(dataSaveDir,timePlot+'_'+str(timeWindow)+'_loaddiff'))
+
+    """ NV.plotAggregateCombined(
+            combined_agg=combinedAgg,
+            mot='mot2',
+            data_key='pwm',
+            idx=0,
+            max_ts=40000,
+            save_only=dataSaveDir
+        ) """
+
+    """ 
+        # Aggregate for 2 different motor (normal v. abnormal)
+        NV.plotAggregateCombinedMotDiff(
+        combined_agg=combinedAgg,
+        data_key='pwm',
+        idx=0,
+        max_ts=40000,
+        save_only=dataSaveDir
+    ) """
+
+    """ for dataKey in ['rms']:
+        for idx in range(3):
+            # Aggregate only
+            NV.plotAggregateCombined(
+                combined_agg=combinedAgg,
+                mot='mot2',
+                data_key=dataKey,
+                idx=idx,
+                max_ts=40000,
+                save_only=dataSaveDir
+            )
+
+            # Aggregate for 2 different motor (normal v. abnormal)
+            NV.plotAggregateCombinedMotDiff(
+                combined_agg=combinedAgg,
+                data_key=dataKey,
+                idx=idx,
+                max_ts=40000,
+                save_only=dataSaveDir
+            ) """
+
+
+    ##### Plot Load 0-6 (Motor1) #####
+    descList = [
+        'aug9_0_hover20s_2.json',
+        'aug10_1_hover20s_6.json',
+        'aug10_2_hover20s_9.json',
+        'aug10_3_hover20s_2.json',
+        'aug11_4_hover20s_6.json',
+        'aug11_5_hover20s_4.json',
+        'aug11_6_hover20s_5.json'
+    ]
+
+    feedDataset = []
+
+    for desc in descList:
+        print('Loading', desc)
+        feedData = {
+            'description': desc,
+            'loadCount': int(desc.split('_')[1]),
+            'combinedAgg': [],
+            'shiftTime': 0
+        }
+
+        # Load data
+        tstart, tstop = Nav.getTimestampRangeByDescription(
+                                description=desc, 
+                                landed=True)
+
+        # Store data to active
+        navId = Nav.storeData(Nav.getByDescription(description=desc, landed=True), 'test by description')
+        vibId = Vib.storeData(Vib.getBetweenTimestamp(tstart, tstop), 'test between timestamp')
+
+        # Combine data
+        navMultiArray = Nav.getMultiFeatureArray(navId)
+        vibMultiArray = Vib.getMultiFeatureArray(vibId)
+        combinedMultiArray = NV.combineDataMultiFeature(
+            navdata=navMultiArray,
+            vibdata=vibMultiArray
+        )
+        combinedAgg = NV.aggregateCombined(
+            combined_data=combinedMultiArray,
+            time_window=timeWindow
+        )
+
+        feedData['combinedAgg'] = combinedAgg
+
+        feedDataset.append(feedData)
+
+    NV.plotAggregateCombinedLoadDiff(
+        dataset=feedDataset,
+        data_key='pwm',
+        idx=0,
+        max_ts=30000,
+        save_only=dataSaveDir
     )
+
+    for dataKey in ['rms','kurtosis','skewness','crest-factor','peak-to-peak']:
+        for idx in range(3):
+            NV.plotAggregateCombinedLoadDiff(
+                dataset=feedDataset,
+                data_key=dataKey,
+                idx=idx,
+                max_ts=30000,
+                save_only=dataSaveDir
+            )

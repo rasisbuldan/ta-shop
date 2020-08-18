@@ -1,5 +1,6 @@
 '''
     LSTM Nav-Vib Data with Multiple Output - Separate model
+    - Fixed seed
 '''
 
 
@@ -17,6 +18,7 @@ import os
 import math
 import json
 from datetime import datetime
+import pickle
 
 
 ###################################################
@@ -25,7 +27,7 @@ from datetime import datetime
 
 # Dataset Preparation
 nTest = 3
-timeWindow = 250    # in ms
+timeWindow =  250    # in ms
 
 
 featureName = [
@@ -57,7 +59,7 @@ featureName = [
 nSequence = 8
 nFeatureInput = 4   # pwm1, pitch, roll, yaw, acc.x, acc.y, acc.z
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
-epochNum = 500
+epochNum = 1000
 
 ###################################################
 ################## Data Filtering #################
@@ -75,7 +77,7 @@ discardDesc = [
     'aug9_hover30s_calib0.json',
     'aug9_3_hover10s.json'
 ]
-filterDesc = ['aug9_0_h'] # jul_29
+filterDesc = ['aug9_0'] # jul_29
 
 
 ### Dataset split ###
@@ -104,13 +106,14 @@ verboseFiltered = False
 plotVibAxis = ['x', 'y', 'z']
 
 # Random reproducibility
-random.seed(int(time.time()))
+#random.seed(int(time.time()))
+random.seed(1132)
 
 ### Dataset and model save-load ###
 dataPath = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone'
-modelFilename = 'cache/lstm_navdatavib_model_aug14'
-datasetFilename = 'lstm_navdatavib_dataset_agg_aug14_multiout_' + str(timeWindow) + '_' + '_'.join(filterDesc)
-predPlotFilename = '/plot/{}/plot_pred_{}_{}.jpg'
+modelFilename = 'cache/lstm_navdatavib_model_aug16'
+datasetFilename = 'lstm_navdatavib_dataset_agg_aug16_multiout_' + str(timeWindow) + '_' + '_'.join(filterDesc)
+predPlotFilename = '/plot/{}/plot_pred_{}_{}_{}.jpg'
 
 
 ###################################################
@@ -286,6 +289,7 @@ def getSequenceArray(dataset, n_sequence, n_feature):
 
     seqSetArrInput = np.array([]).reshape(0,n_sequence,n_feature[0])
     seqSetArrOutput = np.array([]).reshape(0,n_feature[1])
+    seqSetArrTimestamp = []
     
     # Iterate over data points
     for nd in range(nData):
@@ -331,6 +335,8 @@ def getSequenceArray(dataset, n_sequence, n_feature):
             dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'][2],      # 14
         ]).reshape(1,n_feature[1])
 
+        #seqSetArrTimestamp.append(dataArr[nd+n_sequence-1]['timestamp'])
+
         # Append into sequence set
         seqSetArrInput = np.append(seqSetArrInput, sequenceArrInput.reshape(1,n_sequence,n_feature[0]), axis=0)
         seqSetArrOutput = np.append(seqSetArrOutput, featureArrOutput, axis=0)
@@ -362,7 +368,7 @@ testDatasetInput, testDatasetOutput = getSequenceArray(testDataset, nSequence, (
 # Overview of train and test dataset
 print('')
 print('-'*40)
-print('Dataset Overview')
+print('Dataset Overview Confirmation')
 print('-'*40)
 print('Number of data:', combSum)
 print('Sequence length:', nSequence)
@@ -384,7 +390,8 @@ print('Input:', testDatasetInput.shape)
 print('Output:', testDatasetOutput.shape)
 print('\n')
 
-cont = input('Continue train dataset? [y/n] ')
+#cont = input('Continue train dataset? [y/n] ')
+cont = 'y' # skip confirmation
 if cont != 'y':
     sys.exit()
 
@@ -440,7 +447,7 @@ def createModel(early_stop=True, checkpoint=True):
 
 
 def loadModel(feature_num):
-    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '.h5'
+    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.h5'
 
     print('-'*30)
     print('Loading model of feature {} from {}'.format(featureName[feature_num], filename))
@@ -449,39 +456,156 @@ def loadModel(feature_num):
     return model
 
 
+def loadHistory(feature_num):
+    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
+    with open(os.path.join(dataPath, filename), 'rb') as historyFile:
+        history = pickle.load(historyFile)
+
+    return history
+
+
 def exportModel(model, feature_num):
-    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '.h5'
+    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.h5'
     
     print('-'*30)
     print('Saving model of feature {} to {}'.format(featureName[feature_num], filename))
     model.save(os.path.join(dataPath, filename))
 
 
+def exportHistory(history, feature_num):
+    filename = modelFilename + '_' + str(feature_num) + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
+    with open(os.path.join(dataPath, filename), 'wb') as historyFile:
+        pickle.dump(history.history, historyFile)
+
+
+def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
+    '''
+        Black and White graph (optimized for final report)
+        idx: feature number in featureName
+    '''
+    # Set font to Times New Roman
+    plt.rcParams["font.family"] = "Times New Roman"
+
+    # Get timestamp array
+    xData = [ts - timestamp_arr[0] for ts in timestamp_arr]
+
+    # Set y-axis limit and ticks
+    if 'rms' in featureName[idx]:
+        ylim = [0,20]
+        yticks = list(range(ylim[0],ylim[1]+1,5))
+    
+    if 'kurtosis' in featureName[idx]:
+        ylim = [-10,30]
+        yticks = list(range(ylim[0],ylim[1]+1,10))
+
+    if 'skewness' in featureName[idx]:
+        ylim = [-10,10]
+        yticks = list(range(ylim[0],ylim[1]+1,5))
+
+    if 'crest-factor' in featureName[idx]:
+        ylim = [-5,10]
+        yticks = list(range(ylim[0],ylim[1]+1,5))
+
+    if 'peak-to-peak' in featureName[idx]:
+        ylim = [0,40]
+        yticks = list(range(ylim[0],ylim[1]+1,10))
+
+    if simple:
+        yticks = []
+
+    # Set x-axis limit and ticks
+    xlim = [0, xData[-1]]
+    if simple:
+        xticks = []
+    else:
+        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+    
+    # Plot
+    fig = plt.figure(figsize=(16,8), dpi=120)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+    plt.get_current_fig_manager().window.state('zoomed')
+
+    ax1 = fig.add_subplot(111, frame_on=True)
+    ax2 = fig.add_subplot(111, frame_on=False)
+
+    p_test, = ax1.plot(xData, output_arr, 'r--', linewidth=0.8)
+    ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+
+    ax1.set_xticks(xticks)
+    ax1.set_xlim(xlim)
+    ax1.set_yticks(yticks)
+    ax1.set_ylim(ylim)
+    ax1.grid(True)
+    if not simple:
+        ax1.set_title(featureName[idx].title(), fontsize=22)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+    ax1.set_ylabel(featureName[idx].title(), fontsize=22)
+
+    p_pred, = ax2.plot(xData, pred_arr, 'k-', linewidth=1)
+    ax2.set_xticks([])
+    ax2.set_xlim(xlim)
+    ax2.set_yticks([])
+    ax2.set_ylim(ylim)
+    ax2.grid(True)
+
+    ax1.legend(
+        (p_test, p_pred),
+        ('Real Data', 'Prediction'),
+        loc='upper right',
+        fontsize=18
+    )
+
+def plotMetricsHistory(history):
+    '''
+        Plot metrics (currently supported: mean squared error)
+    '''
+
+    plotData = history['mean_squared_error']
+    #print(*['Epoch {}: {:.4f}'.format(i+1,plotData[i]) for i in range(0,1000,100)], sep='\n')
+    print('[{}] min: {}'.format(featureName[featNum], min(plotData)))
+
+    fig = plt.figure(figsize=(16,3), dpi=120)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.9, bottom=0.25)
+
+    ax1 = fig.add_subplot(111, frame_on=True)
+
+    p_test, = ax1.plot(plotData, 'k-', linewidth=1.2)
+    ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+
+    ax1.set_xlim([0,len(plotData)])
+    ax1.set_xticks(list(range(0, len(plotData)+1, 200)))
+    ax1.grid(True)
+    ax1.set_ylabel('MSE', fontsize=22)
+    ax1.set_xlabel('Epochs', fontsize=22)
+    ax1.set_title('Mean Squared Error over Epoch', fontsize=22)
+
 # Model train iteration by output feature count
 if train:
 
     modelArr = []
     #for outFeatureNum in range(3):
-    for outFeatureNum in range(nFeatureOutput):
+    for outFeatureNum in range(len(featureName)):
         if not useCachedModel:
             # Create model
             model, addOns = createModel(
-                early_stop=True,
+                early_stop=False,
                 checkpoint=True
             )
 
             # Fit model
-            model.fit(trainDatasetInput, trainDatasetOutput[:,outFeatureNum], epochs=epochNum, callbacks=[*addOns], batch_size=64, verbose=1)
+            history = model.fit(trainDatasetInput, trainDatasetOutput[:,outFeatureNum], epochs=epochNum, callbacks=[*addOns], batch_size=64, verbose=1)
 
             # Export model
             exportModel(model, outFeatureNum)
+            exportHistory(history, outFeatureNum)
 
         else:
             model = loadModel(outFeatureNum)
 
         modelArr.append({
             'feature': featureName[outFeatureNum],
-            'model': model
+            'model': model,
+            'history': loadHistory(outFeatureNum)
         })
 
 
@@ -489,10 +613,12 @@ if train:
 if predict:
     if not train:
         modelArr = []
+        #for outFeatureNum in range(3):
         for outFeatureNum in range(len(featureName)):
             modelArr.append({
                 'feature': featureName[outFeatureNum],
-                'model': loadModel(outFeatureNum)
+                'model': loadModel(outFeatureNum),
+                'history': loadHistory(outFeatureNum)
             })
 
     predOutput = []
@@ -500,7 +626,7 @@ if predict:
     os.mkdir(os.path.join(dataPath,'plot',plotTime + '_' + str(timeWindow)))
 
     #for featNum in range(3):
-    for featNum in range(nFeatureOutput):
+    for featNum in range(len(featureName)):
         print('Predicting output feature {}'.format(featureName[featNum]))
         
         predArr = []
@@ -512,56 +638,25 @@ if predict:
             'data': predArr
         })
 
-        plt.title('Prediction ' + featureName[featNum])
-        fig = plt.figure(
-            figsize=(12.0, 6.0),
-            dpi= 160
-        )
-        
-        ax_test = fig.add_subplot(111, label=featureName[featNum], frame_on=True)
-        ax_pred = fig.add_subplot(111, label=featureName[featNum] + 'pred', frame_on=False)
-
-        # Axis range by feature
-        if 'rms' in featureName[featNum]:
-            yRange = [0,20]
-        
-        if 'kurtosis' in featureName[featNum]:
-            yRange = [-10,30]
-
-        if 'skewness' in featureName[featNum]:
-            yRange = [-8,10]
-
-        if 'crest-factor' in featureName[featNum]:
-            yRange = [-5,10]
-
-        if 'peak-to-peak' in featureName[featNum]:
-            yRange = [0,40]
-
-        if 'x' in featureName[featNum]:
-            axis = 'x'
-
-        yMin = min(*predArr, *testDatasetOutput[:,featNum]) * 1.5
-        yMax = max(*predArr, *testDatasetOutput[:,featNum]) * 1.5
-        xMin = 0
-        xMax = max(testDatasetOutput.shape[0], len(predArr)) * 1
-
-        p_test, = ax_test.plot(list(range(testDatasetOutput.shape[0])), testDatasetOutput[:,featNum], color='C1')
-        ax_test.set_ylim(yRange)
-        ax_test.set_xlim([0,xMax])
-
-        p_pred, = ax_pred.plot(list(range(len(predArr))), predArr, color='C0')
-        ax_pred.set_ylim(yRange)
-        ax_pred.set_xlim([0,xMax])
-
-        ax_test.legend(
-            (p_test, p_pred),
-            ('Real Data', 'Prediction'),
-            loc='upper right'
+        plotMetricsHistory(
+            history=modelArr[featNum]['history']
         )
 
-        plt.title(featureName[featNum].title())
+        if savePredictPlot:
+            plt.savefig(
+                fname=dataPath + predPlotFilename.format(plotTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'hist')
+            )
+
+        # Plot Predicted Value vs Real Value
+        """ plotPrediction(
+            timestamp_arr=list(range(len(predArr))),
+            output_arr=testDatasetOutput[:,featNum],
+            pred_arr=predArr,
+            idx=featNum,
+            simple=True
+        )
         
         if savePredictPlot:
             plt.savefig(
-                fname=dataPath + predPlotFilename.format(plotTime + '_' + str(timeWindow), timeWindow, featureName[featNum])
-            )
+                fname=dataPath + predPlotFilename.format(plotTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'pred')
+            ) """
