@@ -232,11 +232,8 @@ class VibData:
             return: list of dict
             {
                 timestamp
-                rms: [mpu1.x,...,mpu2.z],
-                kurtosis: [mpu1.x,...,mpu2.z],
-                skewness: [mpu1.x,...,mpu2.z],
-                crest-factor: [mpu1.x,...,mpu2.z],
-                peak-to-peak: [mpu1.x,...,mpu2.z]
+                mpu1: [x,y,z],
+                mpu2: [x,y,z]
             }
         '''
 
@@ -760,9 +757,13 @@ class NavData:
             return: list of dict
             {
                 timestamp,
+                state: {
+                    controlState,
+                    batteryPercentage,
+                    batteryMillivolt
+                },
                 pwm: [mot1,mot2,mot3,mot4],
                 orientation: [roll,pitch,yaw],
-                rawAccel: [x,y,z]
             }
         '''
 
@@ -774,9 +775,13 @@ class NavData:
         for data in activeData:
             featureData = {
                 'timestamp': data['timestamp'],
+                'state': {
+                    'controlState': data['state']['controlState'],
+                    'batteryPercentage': data['state']['batteryPercentage'],
+                    'batteryMillivolt': data['state']['batteryMillivolt']
+                },
                 'pwm': [p[1] for p in data['navdata']['pwm'].items()],
                 'orientation': [p[1] for p in data['navdata']['orientation'].items()],
-                'rawAccel': [p[1] for p in data['navdata']['rawMeasures']['accelerometers'].items()]
             }
             
             multiFeatureArray.append(featureData)
@@ -921,6 +926,73 @@ class NavData:
 class NavdataVib:
     def __init__(self, verbose=False):
         self.verbose = verbose
+        
+        self.initializeConnectionDB()
+
+
+    def initializeConnectionDB(self, host='localhost', port=27017):
+        self.clientDB = pymongo.MongoClient(host, port)
+
+        self.flightCollection = self.clientDB['test-db']['flightdatas']
+        if self.verbose:
+            print('Connection to test-db.navdatas successful with', self.numOfDocuments(), 'documents')
+
+
+    def getDescriptionList(self):
+        '''
+            Get list of description in class attribute flightCollection
+        '''
+
+        desc = list(self.flightCollection.distinct('description'))
+
+        return desc
+
+    
+    def getCombined(self, description, landed=True):
+        '''
+        ---------------
+        Return format:
+        ---------------
+        list of dict
+        {
+            'description',
+            'timestamp',
+            'state': {
+                'controlState',
+                'batteryPercentage',
+                'batteryMillivolt',
+            },
+            'pwm': [mot1,mot2,mot3,mot4],
+            'orientation': [roll,pitch,yaw],
+            'mpu1': [x,y,z],
+            'mpu2': [x,y,z]
+        }
+
+        '''
+
+        # Get by description
+        if landed:
+            docs = list(self.flightCollection.find({
+                "$and": [
+                    {
+                        "description": { "$eq": description }
+                    }
+                ]
+            }))
+
+        else:
+            docs = list(self.flightCollection.find({
+                "$and": [
+                    {
+                        "description": { "$eq": description }
+                    },
+                    {
+                        "state.controlState": { "$ne": "CTRL_LANDED" }
+                    }
+                ]
+            }))
+
+        return docs
 
     
     def combineData(self, pwmdata, vibdata):
@@ -996,11 +1068,15 @@ class NavdataVib:
             ---------------
             navdata = list of dict
                 {
-                    timestamp,
-                    pwm: [mot1,mot2,mot3,mot4],
-                    orientation: [roll,pitch,yaw],
-                    rawAccel: [x,y,z]
-                }
+                timestamp,
+                state: {
+                    controlState,
+                    batteryPercentage,
+                    batteryMillivolt
+                },
+                pwm: [mot1,mot2,mot3,mot4],
+                orientation: [roll,pitch,yaw]
+            }
 
             vibdata = list of dict
                 {
@@ -1015,9 +1091,13 @@ class NavdataVib:
             list of dict
                 {
                     timestamp,
+                    state: {
+                        controlState,
+                        batteryPercentage,
+                        batteryMillivolt
+                    },
                     pwm: [mot1,mot2,mot3,mot4],
                     orientation: [roll,pitch,yaw],
-                    rawAccel: [x,y,z],
                     mpu1: [x,y,z],
                     mpu2: [x,y,z],
                 }
@@ -1034,8 +1114,8 @@ class NavdataVib:
         tsNavAvg = (max(tsNav) - min(tsNav)) / len(tsNav)
         tsVibAvg = (max(tsVib) - min(tsVib)) / len(tsVib)
 
-        print('tsNav', len(tsNav))
-        print('tsVib', len(tsVib))
+        #print('tsNav', len(tsNav))
+        #print('tsVib', len(tsVib))
 
         #print('tsPWM: {} | tsVib: {}'.format(tsNavAvg, tsVibAvg))
         #print('tsPWM: {} - {}'.format(min(tsNav), max(tsNav)))
@@ -1070,11 +1150,15 @@ class NavdataVib:
                 combinedArray.append(
                     {
                         'timestamp': tsVib[t],
-                        'pwm': [p[1] for p in navdata[i]['pwm'].items()],
-                        'orientation': [o[1] for o in navdata[i]['orientation'].items()],
-                        'rawAccel': [r[1] for r in navdata[i]['rawAccel'].items()],
-                        'mpu1': [v[1] for v in vibdata[i]['mpu1']],
-                        'mpu2': [v[1] for v in vibdata[i]['mpu2']]
+                        'state': {
+                            'controlState': navdata[i]['state']['controlState'],
+                            'batteryPercentage': navdata[i]['state']['batteryPercentage'],
+                            'batteryMillivolt': navdata[i]['state']['batteryMillivolt']
+                        },
+                        'pwm': navdata[i]['pwm'],
+                        'orientation': navdata[i]['orientation'],
+                        'mpu1': vibdata[t]['mpu1'],
+                        'mpu2': vibdata[t]['mpu2']
                     }
                 )
 
@@ -1084,7 +1168,7 @@ class NavdataVib:
 
         # Interpolate vib data into PWM data
         elif tsNavAvg < tsVibAvg:
-            #print('tsnav < tsvib')
+            #print('\n\ntsnav < tsvib\n\n')
             # Special case: trim boundary data from Nav array
             # start(tsNav) <= start(tsVib)
             startTrim = 0
@@ -1100,32 +1184,26 @@ class NavdataVib:
             tsNavPrev = 0
             tsVibPrev = 0
             for t in range(startTrim, stopTrim):
+                # Check possibility of data repetition
+                if tsNav[t] < tsNavPrev:
+                    continue
 
                 # Get insert index (vib timestamp less than current nav timestamp)
                 i = len(tsVib) - 1
                 while tsVib[i] > tsNav[t]:
                     i -= 1
 
-                # Conditional for duplicated timestamp or backward timestamp
-                # (may be indicate of duplicate data point / data set)
-                if (tsVib[i] < tsVibPrev) or (tsNav[t] < tsNavPrev):
-                    #print('{} <= {} | {} <= {}'.format(tsNav[i], tsNavPrev, tsVib[t], tsVibPrev))
-                    continue
-
                 # Append data into combined array
-                """ {
-                    'pwm': [p[1] for p in navdata[i]['pwm'].items()],
-                    'orientation': [o[1] for o in navdata[i]['orientation'].items()],
-                    'rawAccel': [r[1] for r in navdata[i]['rawAccel'].items()],
-                    'mpu1': [v[1] for v in vibdata[i]['mpu1']],
-                    'mpu2': [v[1] for v in vibdata[i]['mpu2']]
-                } """
                 combinedArray.append(
                     {
                         'timestamp': tsNav[t],
+                        'state': {
+                            'controlState': navdata[t]['state']['controlState'],
+                            'batteryPercentage': navdata[t]['state']['batteryPercentage'],
+                            'batteryMillivolt': navdata[t]['state']['batteryMillivolt']
+                        },
                         'pwm': navdata[t]['pwm'],
                         'orientation': navdata[t]['orientation'],
-                        'rawAccel': navdata[t]['rawAccel'],
                         'mpu1': vibdata[i]['mpu1'],
                         'mpu2': vibdata[i]['mpu2']
                     }
@@ -1150,7 +1228,6 @@ class NavdataVib:
                     timestamp,
                     pwm: [mot1,mot2,mot3,mot4],
                     orientation: [roll,pitch,yaw],
-                    rawAccel: [x,y,z],
                     mpu1: [x,y,z],
                     mpu2: [x,y,z],
                 }
@@ -1162,7 +1239,6 @@ class NavdataVib:
                 {
                     timestamp,
                     orientation: [roll,pitch,yaw],
-                    rawAccel: [x,y,z],
                     mot1: {
                         'pwm',
                         'rms': [x,y,z],
@@ -1222,7 +1298,6 @@ class NavdataVib:
                 aggData = {
                     'timestamp': timeCursor,
                     'orientation': [0,0,0],
-                    'rawAccel': [0,0,0],
                     'mot1': {
                         'pwm': 0,
                         'rms': [0,0,0],
@@ -1243,7 +1318,6 @@ class NavdataVib:
 
                 # Calculate feature aggregation
                 aggData['orientation'] = [np.mean([data['orientation'][axis] for data in aggBuf]) for axis in range(3)]
-                aggData['rawAccel'] = [np.mean([data['rawAccel'][axis] for data in aggBuf]) for axis in range(3)]
                 
                 aggData['mot1']['pwm'] = np.mean([data['pwm'][0] for data in aggBuf])
                 aggData['mot2']['pwm'] = np.mean([data['pwm'][1] for data in aggBuf])
@@ -2560,7 +2634,8 @@ if __name__ == '__main__':
     NV = NavdataVib()
 
     # List description
-    #print('List description:', Nav.listDescriptionTimestamp()[1:])
+    descList = [nav['description'] for nav in Nav.listDescriptionTimestamp()[1:]]
+    print('List description:', *descList, sep='\n')
 
     # Get timestamp range
     tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
@@ -2581,20 +2656,17 @@ if __name__ == '__main__':
         time_window=timeWindow
     )
 
-    # Print unique control state values
-    #csArray = Nav.getControlStateArray(navId)
-    #print(*list(set(csArray)), sep='\n')
 
-    """ NV.plotRawCombined(
+    NV.plotRawCombined(
         combined_data=combinedMultiArray,
-        data_key='mpu1',
-        idx=2,
+        data_key='pwm',
+        idx=0,
         plot_title='Akselerasi (z) Motor 1',
         max_ts=40000
-    ) """
-    timePlot = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-    os.mkdir(os.path.join(dataSaveDir,timePlot+'_'+str(timeWindow)+'_loaddiff'))
+    )
+    
 
+    # Plot combined aggregate
     """ NV.plotAggregateCombined(
             combined_agg=combinedAgg,
             mot='mot2',
@@ -2637,7 +2709,7 @@ if __name__ == '__main__':
 
 
     ##### Plot Load 0-6 (Motor1) #####
-    descList = [
+    """ descList = [
         'aug9_0_hover20s_2.json',
         'aug10_1_hover20s_6.json',
         'aug10_2_hover20s_9.json',
@@ -2648,6 +2720,9 @@ if __name__ == '__main__':
     ]
 
     feedDataset = []
+
+    timePlot = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
+    os.mkdir(os.path.join(dataSaveDir,timePlot+'_'+str(timeWindow)+'_loaddiff'))
 
     for desc in descList:
         print('Loading', desc)
@@ -2699,4 +2774,50 @@ if __name__ == '__main__':
                 idx=idx,
                 max_ts=30000,
                 save_only=dataSaveDir
-            )
+            ) """
+
+    ### Plot PWM Masking Control State
+    """ csArray = Nav.getControlStateArray(navId)
+    #print(*list(set(csArray)), sep='\n')
+
+    pwmArray = Nav.getPWMArray(navId)
+
+    # Masking number for Control State Array
+    csArrayMask = []
+    for cs in csArray:
+
+        if cs == 'CTRL_LANDED':
+            csArrayMask.append(0)
+        elif cs == 'CTRL HOVERING':
+            csArrayMask.append(5)
+        elif cs == 'CTRL_TRANS_GOTOFIX':
+            csArrayMask.append(2)
+        elif cs == 'CTRL_TRANS_LOOPING':
+            csArrayMask.append(3)
+        elif cs == 'CTRL_TRANS_LANDING':
+            csArrayMask.append(1)
+        elif cs == 'CTRL_FLYING':
+            csArrayMask.append(4)
+
+    fig = plt.figure()
+
+    ax1 = fig.add_subplot(111, frame_on=True)
+    ax2 = fig.add_subplot(111, frame_on=False)
+
+    xData = list(range(max(len(csArray),len(pwmArray))))
+
+    p1, = ax1.plot(xData, pwmArray[0])
+    ax1.set_xlim([xData[0],xData[-1]])
+    ax1.set_ylim([0,280])
+    ax1.set_yticks(list(range(0,280,50)))
+    ax1.grid(True)
+    
+    p2, = ax2.plot(xData, csArray, color='C3')
+    ax2.set_xlim([xData[0],xData[-1]])
+    ax2.set_ylim([0,6])
+    ax2.yaxis.tick_right()
+    ax2.set_yticks([0,1,2,3,4,5])
+    ax2.grid(True)
+
+    plt.show()
+ """
