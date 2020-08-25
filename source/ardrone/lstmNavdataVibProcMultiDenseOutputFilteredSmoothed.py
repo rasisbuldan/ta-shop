@@ -5,10 +5,10 @@
 
 
 # Data processing
-import sys
-from navdataVibProc import VibData, NavData, NavdataVib
-import scipy
 import numpy as np
+import pandas as pd
+import sys
+import scipy
 import sys
 import matplotlib.pyplot as plt
 import random
@@ -19,6 +19,9 @@ import json
 from datetime import datetime
 import pickle
 
+from navdataVibProc import VibData, NavData, NavdataVib
+from evalMetrics import RMSE, SMAPE, MAE, RSquared
+
 
 ###################################################
 #################### Parameter ####################
@@ -26,7 +29,7 @@ import pickle
 
 # Dataset Preparation
 nTest = 3
-timeWindow =  200    # in ms
+timeWindow =  300    # in ms
 
 
 featureName = [
@@ -49,10 +52,10 @@ featureName = [
 
 
 # LSTM
-nSequence = 20
+nSequence = 10
 nFeatureInput = 4   # pwm1, pitch, roll, yaw
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
-epochNum = 500
+epochNum = 225
 
 ###################################################
 ################## Data Filtering #################
@@ -70,7 +73,8 @@ discardDesc = [
     'aug9_hover30s_calib0.json',
     'aug9_3_hover10s.json'
 ]
-filterDesc = ['aug9_0'] # jul_29
+filterDesc = ['aug9_0', 'aug7_2', 'jul29_2'] # jul_29
+excludeDesc = ['fail', 'up_down', 'test', 'crash']
 
 
 ### Dataset split ###
@@ -100,7 +104,7 @@ verboseFiltered = False
 plotVibAxis = ['x', 'y', 'z']
 
 # Random reproducibility
-random.seed(1234)
+random.seed(1132)
 
 ### Dataset and model save-load ###
 loadFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.h5'
@@ -108,6 +112,7 @@ loadHistoryFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_
 dataPath = 'D:/Dataset/ARDrone/'
 #cachePath = 'D:/Dataset/ARDrone/cache'
 plotPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/plot'
+metricsPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/metrics'
 dataPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/'
 cachePath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
 modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
@@ -116,7 +121,8 @@ modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
 
 modelFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
 datasetFilename = 'lstm_navdatavib_dataset_agg_aug21_multioutfilter_' + str(timeWindow) + '_' + '_'.join(filterDesc)
-predPlotFilename = '{}/plot_pred_{}_{}_{}.jpg'
+predPlotFilename = '{}/plot_pred_{}_{}.jpg'
+metricsFilename = 'metrics_{}_{}.csv'
 
 
 ###################################################
@@ -152,7 +158,7 @@ if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath)) or
         dArrCount += 1
         # Data filtering
         # skipping substring in *discardDesc* or *filterDesc* existed in *desc* string
-        if (desc in discardDesc) or not any(fd in desc for fd in filterDesc):
+        if (desc in discardDesc) or not any(fd in desc for fd in filterDesc) or any(fd in desc for fd in excludeDesc):
             if verboseFiltered:
                 print('--------\n[{}/{}] Filtered data:'.format(dArrCount, len(descArray)), desc)
             continue
@@ -241,6 +247,12 @@ def getSequenceArray(dataset, n_sequence, n_feature):
     seqSetArrInput = np.array([]).reshape(0,n_sequence,n_feature[0])
     seqSetArrOutput = np.array([]).reshape(0,n_feature[1])
     
+    # Timestamp concat
+    timestampArrOutput = []
+    nSet = 0
+    newSetTime = 0
+    tsPrev = 0
+    
     # Iterate over data points
     for nd in range(nData):
 
@@ -271,8 +283,51 @@ def getSequenceArray(dataset, n_sequence, n_feature):
         # Append into sequence set
         seqSetArrInput = np.append(seqSetArrInput, sequenceArrInput.reshape(1,n_sequence,n_feature[0]), axis=0)
         seqSetArrOutput = np.append(seqSetArrOutput, featureArrOutput, axis=0)
+        
+        # Timestamp concat
+        ts = dataArr[nd+n_sequence-1]['timestamp']
 
-    return seqSetArrInput, seqSetArrOutput
+        if ts < tsPrev:
+            newSetTime = timestampArrOutput[nd - (1 + nSet)]
+            nSet += 1
+            timestampArrOutput.append(ts + newSetTime + 5)
+        else:
+            timestampArrOutput.append(ts + newSetTime)
+        
+        tsPrev = ts
+
+    return seqSetArrInput, seqSetArrOutput, timestampArrOutput
+
+
+def getEWM(arr):
+    '''
+        Get exponential weighted moving average with pandas
+        Currently supported for output with 15 features
+    '''
+
+    arrDf = pd.DataFrame({
+        'd0': arr[:,0],
+        'd1': arr[:,1],
+        'd2': arr[:,2],
+        'd3': arr[:,3],
+        'd4': arr[:,4],
+        'd5': arr[:,5],
+        'd6': arr[:,6],
+        'd7': arr[:,7],
+        'd8': arr[:,8],
+        'd9': arr[:,9],
+        'd10': arr[:,10],
+        'd11': arr[:,11],
+        'd12': arr[:,12],
+        'd13': arr[:,13],
+        'd14': arr[:,14],
+    })
+
+    arrDfEWM = arrDf.ewm(alpha=0.1).mean()
+    arrEWM = arrDfEWM.to_numpy()
+
+    return arrEWM
+
 
 combSum = 0
 for data in combinedDataset:
@@ -293,8 +348,11 @@ for _ in range(nTest):
 trainDataset = combinedDataset
 
 ##### Split data into input/output sequence #####
-trainDatasetInput, trainDatasetOutput = getSequenceArray(trainDataset, nSequence, (nFeatureInput,nFeatureOutput))
-testDatasetInput, testDatasetOutput = getSequenceArray(testDataset, nSequence, (nFeatureInput,nFeatureOutput))
+#testDatasetTimestamp = get
+trainDatasetInput, trainDatasetOutput, trainDatasetTimestamp = getSequenceArray(trainDataset, nSequence, (nFeatureInput,nFeatureOutput))
+testDatasetInput, testDatasetOutput, testDatasetTimestamp = getSequenceArray(testDataset, nSequence, (nFeatureInput,nFeatureOutput))
+#trainDatasetOutput = getEWM(trainDatasetOutput)
+#testDatasetOutput = getEWM(testDatasetOutput)
 
 # Overview of train and test dataset
 print('')
@@ -348,9 +406,11 @@ from keras.models import load_model
 def createModel(early_stop=True, checkpoint=True):
     # Create model
     model = Sequential()
+    #model.add(LSTM(256, activation='tanh', input_shape=(nSequence, nFeatureInput), return_sequences=True))
     #model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput), return_sequences=True))
     model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput)))
-    #model.add(Dense(256))
+    model.add(Dense(256))
+    model.add(Dense(64))
     model.add(Dense(nFeatureOutput))
 
 
@@ -358,7 +418,7 @@ def createModel(early_stop=True, checkpoint=True):
     addOns = []
 
     if early_stop:
-        addOns.append(EarlyStopping(monitor='val_loss', patience=50, verbose=0, mode='min', restore_best_weights=True))
+        addOns.append(EarlyStopping(monitor='val_loss', patience=100, verbose=0, mode='min', restore_best_weights=True))
 
     if checkpoint:
         trainTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
@@ -416,7 +476,9 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     plt.rcParams["font.family"] = "Times New Roman"
 
     # Get timestamp array
-    xData = [ts - timestamp_arr[0] for ts in timestamp_arr]
+    xData = [(ts/1000) for ts in timestamp_arr]
+    print(xData[:10])
+    print(xData[-1])
 
     # Set y-axis limit and ticks
     if 'RMS' in featureName[idx]:
@@ -443,15 +505,15 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
         yticks = [] """
 
     # Set x-axis limit and ticks
-    xlim = [0, xData[-1]]
+    xlim = [xData[0], xData[-1]]
     if simple:
         xticks = []
     else:
-        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+        xticks = list(range(0, (int(xData[-1]) + 2), 5))
 
     # Plot
     fig = plt.figure(figsize=(16,2.2), dpi=120)
-    fig.subplots_adjust(left=0.07, right=0.97, top=0.95, bottom=0.05)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.97, bottom=0.15)
 
     ax1 = fig.add_subplot(111, frame_on=True)
     ax2 = fig.add_subplot(111, frame_on=False)
@@ -539,7 +601,7 @@ if train:
         # Create model
         print('Creating model')
         model, addOns = createModel(
-            early_stop=True,
+            early_stop=False,
             checkpoint=True
         )
 
@@ -551,7 +613,7 @@ if train:
             validation_data=(testDatasetInput, testDatasetOutput),
             epochs=epochNum,
             callbacks=[*addOns],
-            batch_size=128,
+            batch_size=64,
             verbose=1
         )
 
@@ -567,6 +629,7 @@ if train:
 # Prediction
 if predict:
     print('Starting predicting...')
+    #testDatasetOutput = getEWM(testDatasetOutput)
 
     if not train:
         model = loadModel(loadFilename)
@@ -585,6 +648,31 @@ if predict:
         print('Data Point: {}/{}'.format(i,testDatasetInput.shape[0]), end='\r')
         predArr = np.append(predArr, model.predict(testDatasetInput[datapoint,:,:].reshape(1,nSequence,nFeatureInput), verbose=0).reshape(1,nFeatureOutput), axis=0)
 
+
+    ### Calculate Metrics ###
+    metricsArr = np.array([]).reshape(0,4)
+    for featNum in range(len(featureName)):
+        trueData = testDatasetOutput[:, featNum]
+        predData = predArr[:, featNum]
+
+        metricsVal = np.array([
+            RMSE(trueData, predData),
+            SMAPE(trueData, predData),
+            MAE(trueData, predData),
+            RSquared(trueData, predData)
+        ]).reshape(1,4)
+
+        metricsArr = np.append(metricsArr, metricsVal, axis=0)
+
+    np.savetxt(
+        metricsPath + '/' + metricsFilename.format(trainTime, timeWindow),
+        metricsArr,
+        delimiter=',',
+        header='rmse,smape,mae,rsquared'
+    )
+
+
+    ### Plotting Training Metrics ###
     plotMetricsHistory(
         history=history
     )
@@ -592,25 +680,24 @@ if predict:
     if savePredictPlot:
         
         plt.savefig(
-            fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), timeWindow, 'all', 'hist')
+            fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), 'all', 'hist')
         )
     
+    ### Plotting Predicted Value vs Real Value for each feature ###
+    print('Predicting output')
     for featNum in range(len(featureName)):
-        print('Predicting output')
         
-
-        # Plot Predicted Value vs Real Value
         plotPrediction(
-            timestamp_arr=list(range(len(predArr))),
+            timestamp_arr=testDatasetTimestamp,
             output_arr=testDatasetOutput[:,featNum],
             pred_arr=predArr[:,featNum],
             idx=featNum,
-            simple=True
+            simple=False
         )
         
         if savePredictPlot:
             plt.savefig(
-                fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'pred')
+                fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), featureName[featNum], 'pred')
             )
         else:
             plt.show()

@@ -26,30 +26,36 @@ import pickle
 
 # Dataset Preparation
 nTest = 3
-timeWindow =  200    # in ms
+timeWindow =  100    # in ms
 
 
 featureName = [
-    'RMS (X)',
-    'RMS (Y)',
-    'RMS (Z)',
-    'Kurtosis (X)',
-    'Kurtosis (Y)',
-    'Kurtosis (Z)',
-    'Skewness (X)',
-    'Skewness (Y)',
-    'Skewness (Z)',
-    'Crest Factor (X)',
-    'Crest Factor (Y)',
-    'Crest Factor (Z)',
-    'Peak-To-Peak (X)',
-    'Peak-To-Peak (Y)',
-    'Peak-To-Peak (Z)',
+    'rms.x',
+    'rms.y',
+    'rms.z',
+    'kurtosis.x',
+    'kurtosis.y',
+    'kurtosis.z',
+    'skewness.x',
+    'skewness.y',
+    'skewness.z',
+    'crest-factor.x',
+    'crest-factor.y',
+    'crest-factor.z',
+    'peak-to-peak.x',
+    'peak-to-peak.y',
+    'peak-to-peak.z',
 ]
 
 
+""" featureName = [
+    'rms.x',
+    'rms.y',
+    'rms.z'
+] """
+
 # LSTM
-nSequence = 20
+nSequence = 40
 nFeatureInput = 4   # pwm1, pitch, roll, yaw
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
 epochNum = 500
@@ -88,11 +94,11 @@ testDatasetDesc = []
 ###################################################
 
 # Program flow
-useCachedDataset = True
+useCachedDataset = False
 useCachedModel = False
 train = True
 predict = True
-savePredictPlot = True
+savePredictPlot = False
 bypassCheckpoint = True
 predictPlot = True
 earlyExit = True
@@ -100,23 +106,17 @@ verboseFiltered = False
 plotVibAxis = ['x', 'y', 'z']
 
 # Random reproducibility
+#random.seed(int(time.time()))
 random.seed(1234)
 
 ### Dataset and model save-load ###
-loadFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.h5'
-loadHistoryFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.pkl'
-dataPath = 'D:/Dataset/ARDrone/'
-#cachePath = 'D:/Dataset/ARDrone/cache'
-plotPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/plot'
-dataPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/'
-cachePath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
-modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
-#modelPath = 'D:/Dataset/ARDrone/cache'
-#modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/model'
+loadFilename = '057-6.740199-6.745698.h5'
+cachePath = 'D:/Dataset/ARDrone/modelCheckpoint8'
 
-modelFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-datasetFilename = 'lstm_navdatavib_dataset_agg_aug21_multioutfilter_' + str(timeWindow) + '_' + '_'.join(filterDesc)
-predPlotFilename = '{}/plot_pred_{}_{}_{}.jpg'
+dataPath = 'C:/Users/rss75/Documents/GitHub/ta-shop/source/ardrone'
+modelFilename = 'cache/lstm_navdatavib_model_multidenseoutfilter_aug20_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
+datasetFilename = 'lstm_navdatavib_dataset_agg_aug19_multioutfilter_' + str(timeWindow) + '_' + '_'.join(filterDesc)
+predPlotFilename = '/plot/{}/plot_pred_{}_{}_{}.jpg'
 
 
 ###################################################
@@ -135,7 +135,7 @@ def getDirectoryList(data_dir):
 
 
 # If dataset not cached
-if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath)) or not useCachedDataset:
+if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath,'cache')) or not useCachedDataset:
     print('[!] Cached dataset not found, doing file traversal')
 
     # List description
@@ -188,7 +188,7 @@ if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath)) or
     # Dataset save to file
     print('[o] Saving dataset to', datasetFilename, end='\r')
     np.array(combinedDataset)
-    np.save(dataPath + datasetFilename, combinedDataset)
+    np.save(dataPath + '/cache/' + datasetFilename, combinedDataset)
     print('[v] Saved dataset to', datasetFilename)
 
 else:
@@ -196,7 +196,7 @@ else:
 
     # Load dataset from file
     print('[o] Loading dataset from', datasetFilename + str('.npy'), end='\r')
-    combinedDataset = list(np.load(dataPath + datasetFilename + str('.npy'), allow_pickle=True))
+    combinedDataset = list(np.load(dataPath + '/cache/' + datasetFilename + str('.npy'), allow_pickle=True))
     print('[v] Loaded dataset from', datasetFilename)
 
 
@@ -252,18 +252,30 @@ def getSequenceArray(dataset, n_sequence, n_feature):
             # Add input feature array
             featureArrInput = np.array([
                 dataArr[nd+ns]['mot1']['pwm'],                      # 0
-                *dataArr[nd+ns]['orientation'],
+                dataArr[nd+ns]['orientation'][0],
+                dataArr[nd+ns]['orientation'][1],
+                dataArr[nd+ns]['orientation'][2],
             ]).reshape(1,n_feature[0])
 
             sequenceArrInput = np.append(sequenceArrInput, featureArrInput, axis=0)
         
         # Add output feature array
         featureArrOutput = np.array([
-            *dataArr[nd+n_sequence-1]['mot1']['rms'],               # 0
-            *dataArr[nd+n_sequence-1]['mot1']['kurtosis'],
-            *dataArr[nd+n_sequence-1]['mot1']['skewness'],
-            *dataArr[nd+n_sequence-1]['mot1']['crest-factor'],
-            *dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'],
+            dataArr[nd+n_sequence-1]['mot1']['rms'][0],               # 0
+            dataArr[nd+n_sequence-1]['mot1']['rms'][1],
+            dataArr[nd+n_sequence-1]['mot1']['rms'][2],
+            dataArr[nd+n_sequence-1]['mot1']['kurtosis'][0],
+            dataArr[nd+n_sequence-1]['mot1']['kurtosis'][1],
+            dataArr[nd+n_sequence-1]['mot1']['kurtosis'][2],          # 5
+            dataArr[nd+n_sequence-1]['mot1']['skewness'][0],
+            dataArr[nd+n_sequence-1]['mot1']['skewness'][1],
+            dataArr[nd+n_sequence-1]['mot1']['skewness'][2],
+            dataArr[nd+n_sequence-1]['mot1']['crest-factor'][0],
+            dataArr[nd+n_sequence-1]['mot1']['crest-factor'][1],      # 10
+            dataArr[nd+n_sequence-1]['mot1']['crest-factor'][2],
+            dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'][0],
+            dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'][1],
+            dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'][2],      # 14
         ]).reshape(1,n_feature[1])
 
         #seqSetArrTimestamp.append(dataArr[nd+n_sequence-1]['timestamp'])
@@ -324,8 +336,15 @@ print('\n')
 # Checkpoint confirmation
 if not bypassCheckpoint:
     cont = input('Continue train dataset? [y/n] ')
+    #cont = 'y' # skip confirmation
     if cont != 'y':
         sys.exit()
+
+
+
+""" plt.plot(list(range(testDatasetOutput.shape[0])), testDatasetInput[:,0,0], color='C0')
+plt.plot(list(range(nSequence, nSequence + testDatasetOutput.shape[0])), testDatasetOutput[:,0], color='C1')
+plt.show() """
 
 
 ###################################################
@@ -333,7 +352,9 @@ if not bypassCheckpoint:
 ###################################################
 '''
     TO DO:
-    [ ] 
+    [ ] Custom model for different feature (variable model params)
+        -> createModel()
+    [ ] Add model load/save history
 '''
 
 # Module imports
@@ -348,9 +369,7 @@ from keras.models import load_model
 def createModel(early_stop=True, checkpoint=True):
     # Create model
     model = Sequential()
-    #model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput), return_sequences=True))
-    model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput)))
-    #model.add(Dense(256))
+    model.add(LSTM(1024, activation='tanh', input_shape=(nSequence, nFeatureInput)))
     model.add(Dense(nFeatureOutput))
 
 
@@ -358,11 +377,16 @@ def createModel(early_stop=True, checkpoint=True):
     addOns = []
 
     if early_stop:
-        addOns.append(EarlyStopping(monitor='val_loss', patience=50, verbose=0, mode='min', restore_best_weights=True))
+        addOns.append(EarlyStopping(monitor='val_loss', patience=200, verbose=0, mode='min', restore_best_weights=True))
 
     if checkpoint:
         trainTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-        addOns.append(ModelCheckpoint('D:/Dataset/ARDrone/modelCheckpointLog/' + trainTime + '_{epoch:03d}-{loss:03f}-{val_loss:03f}.h5', save_best_only=True, monitor='val_loss', mode='min'))
+        try:
+            os.mkdir('D:/Dataset/ARDrone/modelCheckpoint8')
+        except:
+            # already exist
+            pass
+        addOns.append(ModelCheckpoint('D:/Dataset/ARDrone/modelCheckpoint8/{epoch:03d}-{loss:03f}-{val_loss:03f}.h5', save_best_only=True, monitor='val_loss', mode='min'))
     
 
     # Compile model
@@ -383,10 +407,8 @@ def loadModel(filename=None):
     return model
 
 
-def loadHistory(filename):
-    if filename == None:
-        filename = modelFilename + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
-    
+def loadHistory():
+    filename = modelFilename + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
     with open(os.path.join(dataPath, filename), 'rb') as historyFile:
         history = pickle.load(historyFile)
 
@@ -419,28 +441,28 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     xData = [ts - timestamp_arr[0] for ts in timestamp_arr]
 
     # Set y-axis limit and ticks
-    if 'RMS' in featureName[idx]:
+    if 'rms' in featureName[idx]:
         ylim = [0,20]
         yticks = list(range(ylim[0],ylim[1]+1,5))
     
-    if 'Kurtosis' in featureName[idx]:
+    if 'kurtosis' in featureName[idx]:
         ylim = [-10,30]
         yticks = list(range(ylim[0],ylim[1]+1,10))
 
-    if 'Skewness' in featureName[idx]:
+    if 'skewness' in featureName[idx]:
         ylim = [-10,10]
         yticks = list(range(ylim[0],ylim[1]+1,5))
 
-    if 'Crest Factor' in featureName[idx]:
+    if 'crest-factor' in featureName[idx]:
         ylim = [-5,10]
         yticks = list(range(ylim[0],ylim[1]+1,5))
 
-    if 'Peak-To-Peak' in featureName[idx]:
+    if 'peak-to-peak' in featureName[idx]:
         ylim = [0,40]
         yticks = list(range(ylim[0],ylim[1]+1,10))
 
-    """ if simple:
-        yticks = [] """
+    if simple:
+        yticks = []
 
     # Set x-axis limit and ticks
     xlim = [0, xData[-1]]
@@ -448,10 +470,11 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
         xticks = []
     else:
         xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
-
+    
     # Plot
-    fig = plt.figure(figsize=(16,2.2), dpi=120)
-    fig.subplots_adjust(left=0.07, right=0.97, top=0.95, bottom=0.05)
+    fig = plt.figure(figsize=(16,8), dpi=120)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
+    plt.get_current_fig_manager().window.state('zoomed')
 
     ax1 = fig.add_subplot(111, frame_on=True)
     ax2 = fig.add_subplot(111, frame_on=False)
@@ -465,9 +488,9 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     ax1.set_ylim(ylim)
     ax1.grid(True)
     if not simple:
-        ax1.set_title(featureName[idx].title(), fontsize=20)
-        ax1.set_xlabel('Waktu (ms)', fontsize=20)
-    ax1.set_ylabel(featureName[idx].title(), fontsize=20)
+        ax1.set_title(featureName[idx].title(), fontsize=22)
+        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+    ax1.set_ylabel(featureName[idx].title(), fontsize=22)
 
     p_pred, = ax2.plot(xData, pred_arr, 'k-', linewidth=1)
     ax2.set_xticks([])
@@ -476,59 +499,36 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     ax2.set_ylim(ylim)
     ax2.grid(True)
 
-    """ ax1.legend(
+    ax1.legend(
         (p_test, p_pred),
         ('Real Data', 'Prediction'),
         loc='upper right',
         fontsize=18
-    ) """
+    )
 
 def plotMetricsHistory(history):
     '''
         Plot metrics (currently supported: mean squared error)
     '''
-    # Set font to Times New Roman
-    plt.rcParams["font.family"] = "Times New Roman"
 
-    if train:
-        plotData = history.history['loss']
-    else:
-        plotData = history['loss']
-
-    if train:
-        plotDataVal = history.history['val_loss']
-    else:
-        plotDataVal = history['val_loss']
-
-    minVal = plotDataVal[0]
-    minEpoch = 1
-    for i in range(len(plotDataVal)):
-        if plotDataVal[i] < minVal:
-            minVal = plotDataVal[i]
-            minEpoch = i+1
-
+    plotData = history['mean_squared_error']
+    #print(*['Epoch {}: {:.4f}'.format(i+1,plotData[i]) for i in range(0,1000,100)], sep='\n')
+    print('[{}] min: {}'.format(featureName[featNum], min(plotData)))
 
     fig = plt.figure(figsize=(16,3), dpi=120)
-    fig.subplots_adjust(left=0.07, right=0.97, top=0.85, bottom=0.25)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.9, bottom=0.25)
 
-    p1, = plt.plot(plotData, 'r--', linewidth=1.2)
-    p2, = plt.plot(plotDataVal, 'k-', linewidth=1.2)
+    ax1 = fig.add_subplot(111, frame_on=True)
 
-    plt.xlim([0,100])
+    ax1.plot(plotData, 'k-', linewidth=1.2)
+    ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
 
-    plt.title('Mean Squared Error over Epoch ({}-{:.5f})'.format(minEpoch, minVal), fontsize=22)
-    plt.xlabel('Epochs', fontsize=22)
-    plt.ylabel('MSE', fontsize=22)
-    plt.grid(True)
-    plt.legend((p1, p2),('Training','Validation'))
-
-
-
-###################################################
-################ Train & Predict ##################
-###################################################
-
-trainTime = 0
+    ax1.set_xlim([0,len(plotData)])
+    ax1.set_xticks(list(range(0, len(plotData)+1, 200)))
+    ax1.grid(True)
+    ax1.set_ylabel('MSE', fontsize=22)
+    ax1.set_xlabel('Epochs', fontsize=22)
+    ax1.set_title('Mean Squared Error over Epoch', fontsize=22)
 
 # Model train iteration by output feature count
 if train:
@@ -539,7 +539,7 @@ if train:
         # Create model
         print('Creating model')
         model, addOns = createModel(
-            early_stop=True,
+            early_stop=False,
             checkpoint=True
         )
 
@@ -551,7 +551,7 @@ if train:
             validation_data=(testDatasetInput, testDatasetOutput),
             epochs=epochNum,
             callbacks=[*addOns],
-            batch_size=128,
+            batch_size=64,
             verbose=1
         )
 
@@ -570,13 +570,10 @@ if predict:
 
     if not train:
         model = loadModel(loadFilename)
-        history = loadHistory(loadHistoryFilename)
 
     predOutput = []
-
-    if trainTime == 0:
-        trainTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-    os.mkdir(plotPath + '/' + str(trainTime) + '_' + str(timeWindow))
+    plotTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
+    os.mkdir(os.path.join(dataPath,'plot',plotTime + '_' + str(timeWindow)))
 
     predArr = np.array([]).reshape(0,nFeatureOutput)
     i = 0
@@ -585,19 +582,18 @@ if predict:
         print('Data Point: {}/{}'.format(i,testDatasetInput.shape[0]), end='\r')
         predArr = np.append(predArr, model.predict(testDatasetInput[datapoint,:,:].reshape(1,nSequence,nFeatureInput), verbose=0).reshape(1,nFeatureOutput), axis=0)
 
-    plotMetricsHistory(
-        history=history
-    )
-
-    if savePredictPlot:
-        
-        plt.savefig(
-            fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), timeWindow, 'all', 'hist')
-        )
-    
+    #for featNum in range(3):
     for featNum in range(len(featureName)):
         print('Predicting output')
         
+        """ plotMetricsHistory(
+            history=modelArr[featNum]['history']
+        )
+
+        if savePredictPlot:
+            plt.savefig(
+                fname=dataPath + predPlotFilename.format(plotTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'hist')
+            ) """
 
         # Plot Predicted Value vs Real Value
         plotPrediction(
@@ -610,7 +606,7 @@ if predict:
         
         if savePredictPlot:
             plt.savefig(
-                fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'pred')
+                fname=dataPath + predPlotFilename.format(plotTime + '_' + str(timeWindow), timeWindow, featureName[featNum], 'pred')
             )
         else:
             plt.show()

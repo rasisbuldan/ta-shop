@@ -2317,6 +2317,7 @@ class NavdataVib:
             ylim = [0,20]
             yticks = list(range(ylim[0],ylim[1]+1,5))
             ylabel = 'RMS'
+            print(np.mean(yData1), np.mean(yData2))
         
         if data_key == 'kurtosis':
             ylim = [-10,30]
@@ -2347,9 +2348,9 @@ class NavdataVib:
                 ylabel = ylabel + ' (Z)'
 
         # Plot
-        fig = plt.figure(figsize=(16,8), dpi=120)
-        fig.subplots_adjust(left=0.07, right=0.97, top=0.35, bottom=0.1)
-        plt.get_current_fig_manager().window.state('zoomed')
+        fig = plt.figure(figsize=(16,2.2), dpi=120)
+        fig.subplots_adjust(left=0.07, right=0.97, top=0.95, bottom=0.15)
+        #plt.get_current_fig_manager().window.state('zoomed')
 
         ax1 = fig.add_subplot(111, frame_on=True)
         ax2 = fig.add_subplot(111, frame_on=False)
@@ -2622,11 +2623,11 @@ class NavdataVib:
 if __name__ == '__main__':
     ### Parameter ###
     queryDescription = 'aug9_0_hover30s_5.json'
-    dataSaveDir = 'D:/Cloud/Google Drive/Tugas Akhir/Laporan/plot/load-diff'
-    predPlotFilename = '/{}_{}_loaddiff/plot_pred_{}_{}_{}.svg'
+    dataSaveDir = 'D:/Cloud/Google Drive/Tugas Akhir/Laporan/plot/mot-diff'
+    predPlotFilename = '/{}_{}_motdiff/plot_pred_{}_{}_{}.svg'
     plotVibAxis = ['x','y','z']
     stepWeight = 0.1
-    timeWindow = 2000
+    timeWindow = 500
     
     ### Object Declaration ###
     Vib = VibData()
@@ -2635,7 +2636,7 @@ if __name__ == '__main__':
 
     # List description
     descList = [nav['description'] for nav in Nav.listDescriptionTimestamp()[1:]]
-    print('List description:', *descList, sep='\n')
+    #print('List description:', *descList, sep='\n')
 
     # Get timestamp range
     tstart, tstop = Nav.getTimestampRangeByDescription(description=queryDescription, landed=True)
@@ -2657,14 +2658,17 @@ if __name__ == '__main__':
     )
 
 
-    NV.plotRawCombined(
+    """ NV.plotRawCombined(
         combined_data=combinedMultiArray,
         data_key='pwm',
         idx=0,
         plot_title='Akselerasi (z) Motor 1',
         max_ts=40000
-    )
+    ) """
     
+    ##### Plot Aggregation #####
+    timePlot = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
+    os.mkdir(dataSaveDir + '/' + timePlot + '_' + str(timeWindow) + '_motdiff')
 
     # Plot combined aggregate
     """ NV.plotAggregateCombined(
@@ -2676,27 +2680,27 @@ if __name__ == '__main__':
             save_only=dataSaveDir
         ) """
 
-    """ 
-        # Aggregate for 2 different motor (normal v. abnormal)
-        NV.plotAggregateCombinedMotDiff(
+    # Aggregate for 2 different motor (normal v. abnormal)
+    
+    NV.plotAggregateCombinedMotDiff(
         combined_agg=combinedAgg,
         data_key='pwm',
         idx=0,
         max_ts=40000,
         save_only=dataSaveDir
-    ) """
-
-    """ for dataKey in ['rms']:
+    )
+    
+    for dataKey in ['rms', 'kurtosis', 'skewness', 'crest-factor', 'peak-to-peak']:
         for idx in range(3):
             # Aggregate only
-            NV.plotAggregateCombined(
+            """ NV.plotAggregateCombined(
                 combined_agg=combinedAgg,
                 mot='mot2',
                 data_key=dataKey,
                 idx=idx,
                 max_ts=40000,
                 save_only=dataSaveDir
-            )
+            ) """
 
             # Aggregate for 2 different motor (normal v. abnormal)
             NV.plotAggregateCombinedMotDiff(
@@ -2705,7 +2709,7 @@ if __name__ == '__main__':
                 idx=idx,
                 max_ts=40000,
                 save_only=dataSaveDir
-            ) """
+            )
 
 
     ##### Plot Load 0-6 (Motor1) #####
@@ -2776,7 +2780,7 @@ if __name__ == '__main__':
                 save_only=dataSaveDir
             ) """
 
-    ### Plot PWM Masking Control State
+    ##### Plot PWM Masking Control State #####
     """ csArray = Nav.getControlStateArray(navId)
     #print(*list(set(csArray)), sep='\n')
 
