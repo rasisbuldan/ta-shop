@@ -29,7 +29,7 @@ from evalMetrics import RMSE, SMAPE, MAE, RSquared
 
 # Dataset Preparation
 nTest = 3
-timeWindow =  300    # in ms
+timeWindow =  250    # in ms
 
 
 featureName = [
@@ -55,7 +55,7 @@ featureName = [
 nSequence = 10
 nFeatureInput = 4   # pwm1, pitch, roll, yaw
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
-epochNum = 225
+epochNum = 100
 
 ###################################################
 ################## Data Filtering #################
@@ -74,7 +74,10 @@ discardDesc = [
     'aug9_3_hover10s.json'
 ]
 filterDesc = ['aug9_0', 'aug7_2', 'jul29_2'] # jul_29
-excludeDesc = ['fail', 'up_down', 'test', 'crash']
+excludeDesc = ['fail', 'up_down', 'test', 'crash', '10s', '20s']
+
+""" filterDesc = ['aug10_1']
+excludeDesc = ['fail', 'up_down', 'test', 'crash'] """
 
 
 ### Dataset split ###
@@ -92,24 +95,23 @@ testDatasetDesc = []
 ###################################################
 
 # Program flow
-useCachedDataset = True
+useCachedDataset = False
 useCachedModel = False
 train = True
 predict = True
 savePredictPlot = True
-bypassCheckpoint = True
+bypassCheckpoint = False
 predictPlot = True
 earlyExit = True
 verboseFiltered = False
 plotVibAxis = ['x', 'y', 'z']
 
 # Random reproducibility
-random.seed(1132)
+random.seed(1132) # 12.3
 
 ### Dataset and model save-load ###
 loadFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.h5'
 loadHistoryFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.pkl'
-dataPath = 'D:/Dataset/ARDrone/'
 #cachePath = 'D:/Dataset/ARDrone/cache'
 plotPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/plot'
 metricsPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/metrics'
@@ -148,7 +150,7 @@ if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath)) or
     print('[o] Getting description list...', end='\r')
     descArray = NV.getDescriptionList()
     print('[v] Getting description list done!\n')
-    print(*descArray, sep='\n')
+    #print(*descArray, sep='\n')
 
     combinedDataset = []
 
@@ -353,6 +355,8 @@ trainDatasetInput, trainDatasetOutput, trainDatasetTimestamp = getSequenceArray(
 testDatasetInput, testDatasetOutput, testDatasetTimestamp = getSequenceArray(testDataset, nSequence, (nFeatureInput,nFeatureOutput))
 #trainDatasetOutput = getEWM(trainDatasetOutput)
 #testDatasetOutput = getEWM(testDatasetOutput)
+#for i in range(len(featureName)):
+#    print(featureName[i],':',np.sqrt(np.mean(np.square(testDatasetOutput[:,i]))))
 
 # Overview of train and test dataset
 print('')
@@ -378,6 +382,10 @@ print('Number of dataset(s):', len(testDataset))
 print('Input:', testDatasetInput.shape)
 print('Output:', testDatasetOutput.shape)
 print('\n')
+
+# Early exit
+if earlyExit:
+    sys.exit()
 
 # Checkpoint confirmation
 if not bypassCheckpoint:
@@ -477,8 +485,8 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
 
     # Get timestamp array
     xData = [(ts/1000) for ts in timestamp_arr]
-    print(xData[:10])
-    print(xData[-1])
+    #print(xData[:10])
+    #print(xData[-1])
 
     # Set y-axis limit and ticks
     if 'RMS' in featureName[idx]:

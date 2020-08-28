@@ -5,13 +5,15 @@ import math
 import sys
 import random
 import traceback
+import os
 
 #############################
 ##### Parameter Options #####
 #############################
 
 fileName = 'seq_agg_1k1s_aug14'
-dumpPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/dumps/seq_agg'
+dumpPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/dumps/seq_agg_load6'
+os.mkdir(dumpPath)
 
 numOfStep = 6
 nAggregates = 1000
@@ -24,20 +26,23 @@ timeWindow = 1000   # ms
 #############################
 
 # Include substring
-includeDesc = ['aug9_0_hover30s', 'aug10', 'aug11']
+includeDesc = ['aug9_0_hover30s_', 'aug10', 'aug11']
 
 # Exclude subsstring
-excludeDesc = ['crash', 'fail', 'test', '10s']
+excludeDesc = ['fail', 'up_down', 'test', 'crash']
 
 # Discard specific filename
-""" discardDesc = [
+discardDesc = [
     'aug10_testfail.json',
-    'aug10_1_test.json',
-    'aug10_1_test_2.json',
-    'aug10_2_hover20s_4_crash.json',
     'aug10_3_hover20s_fail.json',
     'aug11_4_hover20s_2_crash.json',
-] """
+    'aug10_2_hover20s_4_crash.json',
+    'aug10_1_test_2.json',
+    'aug10_1_test.json',
+    'aug9_2_hover20s_crash.json',
+    'aug9_hover30s_calib0.json',
+    'aug9_3_hover10s.json'
+]
 
 discardDesc = []
 
@@ -160,42 +165,11 @@ for stepDataset in datasetArrayPerStep:
     for stepData in stepDataset:
         stepNum += 1
         print('[D({}/{}) F({}/{})] Processing {}...'.format(stepDatasetNum, len(datasetArrayPerStep), stepNum, len(stepDataset), stepData))
-        
-        # Get timestamp range
-        tsStart, tsStop = Nav.getTimestampRangeByDescription(
-            description=stepData,
-            landed=True,
-        )
-
-        # Get vibration data
-        vibData = Vib.getBetweenTimestamp(
-            lower=tsStart,
-            upper=tsStop
-        )
-
-        ##### CHECKPOINT 1 - Vibdata Empty #####
-        if len(vibData) == 0:
-            print('--> [!] Vibdata empty, skipping...')
-            continue
-
-        # Store navdata to local active data
-        navId = Nav.storeData(
-            data_array=Nav.getByDescription(
-                description=stepData,
-                landed=False),
-            description=desc
-        )
-
-        # Store vibdata to local active data
-        vibId = Vib.storeData(
-            data_array=vibData,
-            description=desc
-        )
 
         # Combine Array
-        combinedData = NV.combineDataMultiFeature(
-            navdata=Nav.getMultiFeatureArray(navId),
-            vibdata=Vib.getMultiFeatureArray(vibId)
+        combinedData = NV.getCombined(
+            description=stepData,
+            landed=True
         )
 
         # Aggregate Combined Arrya
@@ -219,7 +193,7 @@ for stepDataset in datasetArrayPerStep:
     print('Converting to numpy array!')
     dataArray = np.array([]).reshape(0,35)
     dataNum = 0
-    for data in stepDataArray:
+    for data in stepDataArray[10:]:
         dataNum += 1
         hashCount = dataNum//(len(stepDataArray)//50)
         print('[' + ('#' * hashCount) + ('-' * (50-hashCount)) + '] - {:.1f}%'.format(dataNum/len(stepDataArray)*100), end='\r')
