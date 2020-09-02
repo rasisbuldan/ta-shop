@@ -1,36 +1,26 @@
 '''
-    LSTM Nav-Vib Data with Multiple Output - Separate model
-    - Fixed seed
+    LSTM combined load with load number as input
 '''
 
-
-# Data processing
 import numpy as np
 import pandas as pd
 import sys
-import scipy
-import sys
-import matplotlib.pyplot as plt
-import random
-import time
 import os
-import math
-import json
-from datetime import datetime
+import time
 import pickle
-
-from navdataVibProc import VibData, NavData, NavdataVib
+import random
+import matplotlib.pyplot as plt
+from datetime import datetime
+from flightdataProc import FlightData
 from evalMetrics import RMSE, SMAPE, MAE, RSquared
-
 
 ###################################################
 #################### Parameter ####################
 ###################################################
 
 # Dataset Preparation
-nTest = 3
+nTest = 0.3
 timeWindow =  250    # in ms
-
 
 featureName = [
     'RMS (X)',
@@ -50,16 +40,11 @@ featureName = [
     'Peak-To-Peak (Z)',
 ]
 
-
 # LSTM
 nSequence = 10
-nFeatureInput = 4   # pwm1, pitch, roll, yaw
-nFeatureOutput = 15  # rms.x, rms.y, rms.z
-epochNum = 100
-
-###################################################
-################## Data Filtering #################
-###################################################
+nFeatureInput = 5   # pwm1, pitch, roll, yaw, loadNum
+nFeatureOutput = 15  # rms, kurt, skew, crest, p2p
+epochNum = 200
 
 # Data filtering
 discardDesc = [
@@ -73,21 +58,18 @@ discardDesc = [
     'aug9_hover30s_calib0.json',
     'aug9_3_hover10s.json'
 ]
-filterDesc = ['aug9_0'] # jul_29
-excludeDesc = ['fail', 'up_down', 'test', 'crash', '10s']
 
-""" filterDesc = ['aug10_1']
-excludeDesc = ['fail', 'up_down', 'test', 'crash'] """
+filterDesc = [
+    'aug9_0',
+    'aug10_1',
+    'aug10_2',
+    'aug10_3',
+    'aug11_4',
+    'aug11_5',
+    'aug11_6',
+]
 
-
-### Dataset split ###
-trainDatasetInput = np.empty((0, 1, nFeatureInput))
-trainDatasetOutput = np.empty((0, 1, nFeatureOutput))
-testDatasetInput = np.empty((0, 1, nFeatureInput))
-testDatasetOutput = np.empty((0, 1, nFeatureOutput))
-trainDatasetDesc = []
-testDatasetDesc = []
-
+excludeDesc = ['fail', 'up_down', 'test', 'crash']
 
 
 ###################################################
@@ -97,119 +79,79 @@ testDatasetDesc = []
 # Program flow
 useCachedDataset = False
 useCachedModel = False
+bypassCheckpoint = True
+earlyExit = False
 train = True
 predict = True
-savePredictPlot = True
-bypassCheckpoint = False
 predictPlot = True
-earlyExit = False
+savePredictPlot = True
 verboseFiltered = False
-plotVibAxis = ['x', 'y', 'z']
 
 # Random reproducibility
 random.seed(1132) # 12.3
 
-### Dataset and model save-load ###
-loadFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.h5'
-loadHistoryFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_21_10_22_29_100_aug9_0.pkl'
-#cachePath = 'D:/Dataset/ARDrone/cache'
-plotPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/plot'
-metricsPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/metrics'
-dataPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/'
-cachePath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
-modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
-#modelPath = 'D:/Dataset/ARDrone/cache'
-#modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/model'
 
-modelFilename = 'lstm_navdatavib_model_multidenseoutfilter_aug20_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-datasetFilename = 'lstm_navdatavib_dataset_agg_aug21_multioutfilter_' + str(timeWindow) + '_' + '_'.join(filterDesc)
-predPlotFilename = '{}/plot_pred_{}_{}.jpg'
-metricsFilename = 'metrics_{}_{}.csv'
+### Dataset and model caching ###
+cachePath = 'D:/cache_new'
+datasetFilename = 'vm_dataset_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.npy'
+modelFilename = 'vm_model_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S')) + '.h5'
+metricsFilename = 'vm_metrics_' + str(datetime.now().strftime('%y_%m_%d_%H_%M_%S')) + '.csv'
 
 
-###################################################
-########## File Traversal & Aggregation ###########
-###################################################
-# Vibibibhelofrenaijeswantutelyudetaiemsopritiihiqtengkyu:>
 
-NV = NavdataVib()
+FD = FlightData()
 
 
-def getDirectoryList(data_dir):
-    '''
-        Get list of file in directory
-    '''
-    return [f for f in os.listdir(data_dir) if '.npy' in f]
 
+# Check cached dataset
+if datasetFilename not in [f for f in os.listdir(cachePath) if '.npy' in f] or not useCachedDataset:
 
-# If dataset not cached
-sumcomb = 0
-if (datasetFilename + '.npy') not in getDirectoryList(os.path.join(dataPath)) or not useCachedDataset:
-    print('[!] Cached dataset not found, doing file traversal')
+    # load number loop
+    dataset = []
+    timestampPrev = 0
+    for loadNum in range(len(filterDesc)):
+        dArrCount = 0
+        descList = [desc for desc in FD.listDescription() if (filterDesc[loadNum] in desc) and not any(desc in disc for disc in discardDesc)]
+        
+        # Desc loop
+        for desc in descList:
+            dArrCount += 1
+            flightData = FD.getFlightData(
+                description=desc,
+                landed=True
+            )
 
-    # List description
-    print('[o] Getting description list...', end='\r')
-    descArray = NV.getDescriptionList()
-    print('[v] Getting description list done!\n')
-    #print(*descArray, sep='\n')
+            for fd in flightData:
+                fd['loadNum'] = loadNum
+                fd['timestamp'] = timestampPrev + fd['timestamp']
+            
+            timestampPrev = flightData[-1]['timestamp']
 
-    combinedDataset = []
-
-    # Dataset traversal
-    dArrCount = 0
-    for desc in descArray:
-        dArrCount += 1
-        # Data filtering
-        # skipping substring in *discardDesc* or *filterDesc* existed in *desc* string
-        if (desc in discardDesc) or not any(fd in desc for fd in filterDesc) or any(fd in desc for fd in excludeDesc):
-            if verboseFiltered:
-                print('--------\n[{}/{}] Filtered data:'.format(dArrCount, len(descArray)), desc)
-            continue
-        print('------------------------------------------------------------')
-        print('[{}/{}] Processing:'.format(dArrCount, len(descArray)), desc)
-
-        # Get combined data (from flightdatas)
-        combinedData = NV.getCombined(
-            description=desc,
-            landed=True
-        )
-        sumcomb += len(combinedData)
-
-
-        # Get feature aggregation
-        print('[o] Calculating feature aggregation data...', end='\r')
-        combinedDataAgg = NV.aggregateCombined(
-            combined_data=combinedData,
-            time_window=timeWindow
-        )
-
-
-        print('[o] Appending to combined dataset...', end='\r')
-        combinedDataset.append(
-            {
-                'description': desc,
-                'data': combinedDataAgg
-            }
-        )
-
-        print('--> Processed [{}/{}]'.format(dArrCount, len(descArray)), desc)
-
+            dataset += flightData
+            
+            print('--> Processed [{}][{}/{}]'.format(loadNum, dArrCount, len(descList)), desc, end='\r')
+            
+    print('')
+    print('--> Aggregating: {} data points'.format(len(dataset)))
+    aggregateDataset = FD.aggregate(
+        flight_data=dataset,
+        time_window=timeWindow,
+    )
 
     # Dataset save to file
     print('[o] Saving dataset to', datasetFilename, end='\r')
-    np.array(combinedDataset)
-    np.save(dataPath + datasetFilename, combinedDataset)
-    print('[v] Saved dataset to', datasetFilename)
+    np.array(aggregateDataset)
+    np.save(cachePath + '/' + datasetFilename, dataset)
+    print('[v] Saved dataset to', datasetFilename, '   ')
 
 else:
-    print('[v] Cached dataset found:', datasetFilename + '.npy')
+    print('[v] Cached dataset found:', datasetFilename)
 
     # Load dataset from file
-    print('[o] Loading dataset from', datasetFilename + str('.npy'), end='\r')
-    combinedDataset = list(np.load(dataPath + datasetFilename + str('.npy'), allow_pickle=True))
+    print('[o] Loading dataset from', datasetFilename, end='\r')
+    aggregateDataset = list(np.load(cachePath + '/' + datasetFilename, allow_pickle=True))
     print('[v] Loaded dataset from', datasetFilename)
 
-print(sumcomb)
 
 ###################################################
 ############### Dataset Preparation ###############
@@ -239,12 +181,7 @@ def getSequenceArray(dataset, n_sequence, n_feature):
     seqArrOutput: numpy array with shape (nData, n_feature[1]) -> shifted n_sequence to right
 
     '''
-    dataArr = []
-    
-    # Append all data in dataset into one data array
-    for data in dataset:
-        print(len(data['data']))
-        dataArr += data['data']
+    dataArr = dataset
 
     # Iterate nData
     nData = len(dataArr) - n_sequence + 1
@@ -268,19 +205,20 @@ def getSequenceArray(dataset, n_sequence, n_feature):
             
             # Add input feature array
             featureArrInput = np.array([
-                dataArr[nd+ns]['mot1']['pwm'],                      # 0
-                *dataArr[nd+ns]['orientation'],
+                dataArr[nd+ns]['loadNum'],
+                dataArr[nd+ns]['pwm'],                      # 0
+                *dataArr[nd+ns]['orientation']
             ]).reshape(1,n_feature[0])
 
             sequenceArrInput = np.append(sequenceArrInput, featureArrInput, axis=0)
         
         # Add output feature array
         featureArrOutput = np.array([
-            *dataArr[nd+n_sequence-1]['mot1']['rms'],               # 0
-            *dataArr[nd+n_sequence-1]['mot1']['kurtosis'],
-            *dataArr[nd+n_sequence-1]['mot1']['skewness'],
-            *dataArr[nd+n_sequence-1]['mot1']['crest-factor'],
-            *dataArr[nd+n_sequence-1]['mot1']['peak-to-peak'],
+            *dataArr[nd+n_sequence-1]['rms'],               # 0
+            *dataArr[nd+n_sequence-1]['kurtosis'],
+            *dataArr[nd+n_sequence-1]['skewness'],
+            *dataArr[nd+n_sequence-1]['crest-factor'],
+            *dataArr[nd+n_sequence-1]['peak-to-peak'],
         ]).reshape(1,n_feature[1])
 
         #seqSetArrTimestamp.append(dataArr[nd+n_sequence-1]['timestamp'])
@@ -304,70 +242,26 @@ def getSequenceArray(dataset, n_sequence, n_feature):
     return seqSetArrInput, seqSetArrOutput, timestampArrOutput
 
 
-def getEWM(arr):
-    '''
-        Get exponential weighted moving average with pandas
-        Currently supported for output with 15 features
-    '''
+### Dataset splitting
+testIdxStart = int(nTest * len(aggregateDataset))
+testDataset = aggregateDataset[-testIdxStart:]
+trainDataset = aggregateDataset[:-testIdxStart]
 
-    arrDf = pd.DataFrame({
-        'd0': arr[:,0],
-        'd1': arr[:,1],
-        'd2': arr[:,2],
-        'd3': arr[:,3],
-        'd4': arr[:,4],
-        'd5': arr[:,5],
-        'd6': arr[:,6],
-        'd7': arr[:,7],
-        'd8': arr[:,8],
-        'd9': arr[:,9],
-        'd10': arr[:,10],
-        'd11': arr[:,11],
-        'd12': arr[:,12],
-        'd13': arr[:,13],
-        'd14': arr[:,14],
-    })
-
-    arrDfEWM = arrDf.ewm(alpha=0.1).mean()
-    arrEWM = arrDfEWM.to_numpy()
-
-    return arrEWM
-
-
-combSum = 0
-for data in combinedDataset:
-    dataLen = len(data['data'])
-    print(dataLen)
-    combSum += dataLen
-
-##### Split data into train and test #####
-
-# Split test data
-testDataset = []
-for _ in range(nTest):
-    
-    # Pick random data from dataset
-    popData = combinedDataset.pop(random.randrange(len(combinedDataset)))
-    testDataset.append(popData)
-
-# Split train data
-trainDataset = combinedDataset
-
-##### Split data into input/output sequence #####
-#testDatasetTimestamp = get
 trainDatasetInput, trainDatasetOutput, trainDatasetTimestamp = getSequenceArray(trainDataset, nSequence, (nFeatureInput,nFeatureOutput))
 testDatasetInput, testDatasetOutput, testDatasetTimestamp = getSequenceArray(testDataset, nSequence, (nFeatureInput,nFeatureOutput))
-#trainDatasetOutput = getEWM(trainDatasetOutput)
-#testDatasetOutput = getEWM(testDatasetOutput)
-#for i in range(len(featureName)):
-#    print(featureName[i],':',np.sqrt(np.mean(np.square(testDatasetOutput[:,i]))))
+
+# Stateful -> dividable by batch size
+#trainDatasetInput = trainDatasetInput[:4736,:,:]
+#trainDatasetOutput = trainDatasetOutput[:4736,:]
+#testDatasetInput = testDatasetInput[:1920,:,:]
+#testDatasetOutput = testDatasetOutput[:1920,:]
 
 # Overview of train and test dataset
 print('')
 print('-'*40)
 print('Dataset Overview Confirmation')
 print('-'*40)
-print('Number of data:', combSum)
+print('Number of data:', len(testDataset)+len(trainDataset))
 print('Sequence length:', nSequence)
 print('Number of Input Feature:', nFeatureInput)
 print('Number of Output Feature:', nFeatureOutput)
@@ -387,6 +281,11 @@ print('Input:', testDatasetInput.shape)
 print('Output:', testDatasetOutput.shape)
 print('\n')
 
+""" plt.plot(testDatasetOutput[:,2], 'k-')
+plt.plot(testDatasetInput[:,-1,0], 'r-')
+plt.grid(True)
+plt.show() """
+
 # Early exit
 if earlyExit:
     sys.exit()
@@ -398,33 +297,25 @@ if not bypassCheckpoint:
         sys.exit()
 
 
+
 ###################################################
 ###################### LSTM #######################
 ###################################################
-'''
-    TO DO:
-    [ ] 
-'''
-
-# Module imports
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # silent log
 from keras.models import Sequential
-from keras.layers import LSTM
-from keras.layers import Dense
+from keras.layers import LSTM, Dense
 from keras.models import load_model
-
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 
 def createModel(early_stop=True, checkpoint=True):
     # Create model
     model = Sequential()
-    #model.add(LSTM(256, activation='tanh', input_shape=(nSequence, nFeatureInput), return_sequences=True))
-    #model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput), return_sequences=True))
-    model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput)))
-    model.add(Dense(256))
-    model.add(Dense(64))
+    model.add(LSTM(512, activation='tanh', input_shape=(nSequence, nFeatureInput), stateful=True))
+    #model.add(LSTM(512, activation='tanh', batch_input_shape=(128, nSequence, nFeatureInput), stateful=True))
     model.add(Dense(nFeatureOutput))
 
+    #model.summary()
+    #sys.exit()
 
     # Add Ons
     addOns = []
@@ -434,11 +325,12 @@ def createModel(early_stop=True, checkpoint=True):
 
     if checkpoint:
         trainTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-        addOns.append(ModelCheckpoint('D:/Dataset/ARDrone/modelCheckpointLog/' + trainTime + '_{epoch:03d}-{loss:03f}-{val_loss:03f}.h5', save_best_only=True, monitor='val_loss', mode='min'))
+        addOns.append(ModelCheckpoint('D:/cache_new/checkpoint/' + trainTime + '_{epoch:03d}-{loss:03f}-{val_loss:03f}.h5', save_best_only=True, monitor='val_loss', mode='min'))
     
 
     # Compile model
     model.compile(optimizer='adam', loss='mse', metrics=['mean_squared_error'])
+    
 
     return model, addOns
 
@@ -459,7 +351,7 @@ def loadHistory(filename):
     if filename == None:
         filename = modelFilename + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
     
-    with open(os.path.join(dataPath, filename), 'rb') as historyFile:
+    with open(os.path.join(cachePath, filename), 'rb') as historyFile:
         history = pickle.load(historyFile)
 
     return history
@@ -470,12 +362,12 @@ def exportModel(model):
     
     print('-'*30)
     print('Saving model  to {}'.format(filename))
-    model.save(os.path.join(dataPath, filename))
+    model.save(os.path.join(cachePath, filename))
 
 
 def exportHistory(history):
     filename = modelFilename + '_' + str(timeWindow) + '_' + '_'.join(filterDesc) + '.pkl'
-    with open(os.path.join(dataPath, filename), 'wb') as historyFile:
+    with open(os.path.join(cachePath, filename), 'wb') as historyFile:
         pickle.dump(history.history, historyFile)
 
 
@@ -521,7 +413,7 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     if simple:
         xticks = []
     else:
-        xticks = list(range(0, (int(xData[-1]) + 2), 5))
+        xticks = list(range(0, (int(xData[-1]) + 2), 25))
 
     # Plot
     fig = plt.figure(figsize=(16,2.2), dpi=120)
@@ -557,46 +449,6 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
         fontsize=18
     ) """
 
-def plotMetricsHistory(history):
-    '''
-        Plot metrics (currently supported: mean squared error)
-    '''
-    # Set font to Times New Roman
-    plt.rcParams["font.family"] = "Times New Roman"
-
-    if train:
-        plotData = history.history['loss']
-    else:
-        plotData = history['loss']
-
-    if train:
-        plotDataVal = history.history['val_loss']
-    else:
-        plotDataVal = history['val_loss']
-
-    minVal = plotDataVal[0]
-    minEpoch = 1
-    for i in range(len(plotDataVal)):
-        if plotDataVal[i] < minVal:
-            minVal = plotDataVal[i]
-            minEpoch = i+1
-
-
-    fig = plt.figure(figsize=(16,3), dpi=120)
-    fig.subplots_adjust(left=0.07, right=0.97, top=0.85, bottom=0.25)
-
-    p1, = plt.plot(plotData, 'r--', linewidth=1.2)
-    p2, = plt.plot(plotDataVal, 'k-', linewidth=1.2)
-
-    plt.xlim([0,100])
-
-    plt.title('Mean Squared Error over Epoch ({}-{:.5f})'.format(minEpoch, minVal), fontsize=22)
-    plt.xlabel('Epochs', fontsize=22)
-    plt.ylabel('MSE', fontsize=22)
-    plt.grid(True)
-    plt.legend((p1, p2),('Training','Validation'))
-
-
 
 ###################################################
 ################ Train & Predict ##################
@@ -604,7 +456,7 @@ def plotMetricsHistory(history):
 
 trainTime = 0
 
-# Model train iteration by output feature count
+### Model train iteration by output feature count
 if train:
     print('Starting training...')
 
@@ -625,7 +477,7 @@ if train:
             validation_data=(testDatasetInput, testDatasetOutput),
             epochs=epochNum,
             callbacks=[*addOns],
-            batch_size=64,
+            batch_size=128,
             verbose=1
         )
 
@@ -638,21 +490,63 @@ if train:
         model = loadModel()
 
 
-# Prediction
+
+### Prediction
 if predict:
     print('Starting predicting...')
     #testDatasetOutput = getEWM(testDatasetOutput)
 
-    if not train:
+    # Load file only
+    """ if not train:
         model = loadModel(loadFilename)
-        history = loadHistory(loadHistoryFilename)
+        history = loadHistory(loadHistoryFilename) """
 
     predOutput = []
 
     if trainTime == 0:
         trainTime = str(datetime.now().strftime('%y_%m_%d_%H_%M_%S'))
-    os.mkdir(plotPath + '/' + str(trainTime) + '_' + str(timeWindow))
 
+
+    ### Predict trained data
+    predArr = np.array([]).reshape(0,nFeatureOutput)
+    i = 0
+    for datapoint in range(trainDatasetInput.shape[0]):
+        i += 1
+        print('Data Point: {}/{}'.format(i,trainDatasetInput.shape[0]), end='\r')
+        predArr = np.append(predArr, model.predict(trainDatasetInput[datapoint,:,:].reshape(1,nSequence,nFeatureInput), verbose=0).reshape(1,nFeatureOutput), axis=0)
+
+
+    ### Calculate Metrics - Train ###
+    loadData = list(trainDatasetInput[:,-1,0])
+    loadSet = sorted(set([int(ld) for ld in loadData]))
+    loadIdxChange = [loadData.index(load) for load in loadSet] + [len(loadData)]
+    print(loadSet)
+    print(loadIdxChange)
+
+    metricsLoad = np.array([]).reshape(0,4)
+    loadIdx = 0
+    for load in loadSet:
+        metricsArr = np.array([]).reshape(0,4)
+        for featNum in range(len(featureName)):
+            trueData = trainDatasetOutput[loadIdxChange[loadIdx]:loadIdxChange[loadIdx+1], featNum]
+            predData = predArr[loadIdxChange[loadIdx]:loadIdxChange[loadIdx+1], featNum]
+
+            print('true: {} pred: {}'.format(len(trueData), len(predData)))
+
+            metricsVal = np.array([
+                load,
+                RMSE(trueData, predData),
+                MAE(trueData, predData),
+                RSquared(trueData, predData)
+            ]).reshape(1,4)
+
+            metricsArr = np.append(metricsArr, metricsVal, axis=0)
+        
+        metricsLoad = np.append(metricsLoad, metricsArr, axis=0)
+        loadIdx += 1
+
+
+    ### Predict test data
     predArr = np.array([]).reshape(0,nFeatureOutput)
     i = 0
     for datapoint in range(testDatasetInput.shape[0]):
@@ -660,43 +554,56 @@ if predict:
         print('Data Point: {}/{}'.format(i,testDatasetInput.shape[0]), end='\r')
         predArr = np.append(predArr, model.predict(testDatasetInput[datapoint,:,:].reshape(1,nSequence,nFeatureInput), verbose=0).reshape(1,nFeatureOutput), axis=0)
 
+    ### Calculate Metrics - Test ###
+    loadData = list(testDatasetInput[:,-1,0])
+    loadSet = sorted(set([int(ld) for ld in loadData]))
+    loadIdxChange = [loadData.index(load) for load in loadSet] + [len(loadData)]
+    print(loadSet)
+    print(loadIdxChange)
 
-    ### Calculate Metrics ###
-    metricsArr = np.array([]).reshape(0,4)
-    for featNum in range(len(featureName)):
-        trueData = testDatasetOutput[:, featNum]
-        predData = predArr[:, featNum]
+    loadIdx = 0
+    for load in loadSet:
+        metricsArr = np.array([]).reshape(0,4)
+        for featNum in range(len(featureName)):
+            trueData = testDatasetOutput[loadIdxChange[loadIdx]:loadIdxChange[loadIdx+1], featNum]
+            predData = predArr[loadIdxChange[loadIdx]:loadIdxChange[loadIdx+1], featNum]
 
-        metricsVal = np.array([
-            RMSE(trueData, predData),
-            SMAPE(trueData, predData),
-            MAE(trueData, predData),
-            RSquared(trueData, predData)
-        ]).reshape(1,4)
+            print('true: {} pred: {}'.format(len(trueData), len(predData)))
 
-        metricsArr = np.append(metricsArr, metricsVal, axis=0)
+            metricsVal = np.array([
+                load,
+                RMSE(trueData, predData),
+                MAE(trueData, predData),
+                RSquared(trueData, predData)
+            ]).reshape(1,4)
+
+            metricsArr = np.append(metricsArr, metricsVal, axis=0)
+        
+        metricsLoad = np.append(metricsLoad, metricsArr, axis=0)
+        loadIdx += 1
 
     np.savetxt(
-        metricsPath + '/' + metricsFilename.format(trainTime, timeWindow),
-        metricsArr,
+        cachePath + '/metrics/' + metricsFilename.format(trainTime, timeWindow),
+        metricsLoad,
         delimiter=',',
-        header='rmse,smape,mae,rsquared'
+        header='load,rmse,mae,rsquared'
     )
-
 
     ### Plotting Training Metrics ###
-    plotMetricsHistory(
+    """ plotMetricsHistory(
         history=history
-    )
+    ) """
 
-    if savePredictPlot:
+    ### Save prediction plot
+    """ if savePredictPlot:
         
         plt.savefig(
             fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), 'all', 'hist')
-        )
+        ) """
     
     ### Plotting Predicted Value vs Real Value for each feature ###
     print('Predicting output')
+    os.mkdir(cachePath + '/plot/{}'.format(trainTime))
     for featNum in range(len(featureName)):
         
         plotPrediction(
@@ -709,7 +616,7 @@ if predict:
         
         if savePredictPlot:
             plt.savefig(
-                fname=plotPath + '/' + predPlotFilename.format(trainTime + '_' + str(timeWindow), featureName[featNum], 'pred')
+                fname= cachePath + '/plot/{}/vm_plot_{}.jpg'.format(trainTime, featureName[featNum])
             )
         else:
             plt.show()

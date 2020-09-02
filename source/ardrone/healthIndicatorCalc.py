@@ -14,17 +14,18 @@ dirList = os.listdir(dataPath)
 filename = [fn for fn in dirList if '.csv' in fn][0]
 featureData = pd.read_csv(os.path.join(dataPath, filename))
 featureDataSelectedArr = featureData[['rms1y', 'kurt1y', 'skew1y', 'crest1y']]
-print(filename, len(featureDataSelectedArr))
+print(featureDataSelectedArr.head(10))
+#print(filename, len(featureDataSelectedArr))
 
 for filename in [fn for fn in dirList if '.csv' in fn][1:]:
     featureData = pd.read_csv(os.path.join(dataPath, filename))
     featureDataSelected = featureData[['rms1y', 'kurt1y', 'skew1y', 'crest1y']]
     featureDataSelectedArr = featureDataSelectedArr.append(featureDataSelected, ignore_index=True)
-    print(filename, len(featureDataSelected))
+    #print(filename, len(featureDataSelected))
 
 
 # Calculate PCA
-print(len(featureDataSelectedArr))
+#print(len(featureDataSelectedArr))
 pca = PCA(n_components=1)
 pca.fit(featureDataSelectedArr)
 featureDataSelectedArr['HI'] = pca.transform(featureDataSelectedArr)
@@ -49,7 +50,8 @@ dirList = os.listdir(dataPath)
 filename = [fn for fn in dirList if '.csv' in fn][0]
 featureData = pd.read_csv(os.path.join(dataPath, filename))
 featureDataSelectedArr = featureData[['rms1y','kurt1y', 'skew1y', 'crest1y']]
-print(filename, len(featureDataSelectedArr))
+print(featureDataSelectedArr.head(10))
+#print(filename, len(featureDataSelectedArr))
 
 i = 1
 for filename in [fn for fn in dirList if '.csv' in fn][1:]:
@@ -63,12 +65,12 @@ for filename in [fn for fn in dirList if '.csv' in fn][1:]:
     featureDataSelected = featureDataOffset.append(featureDataSelected, ignore_index=True)
 
     featureDataSelectedArr = featureDataSelectedArr.append(featureDataSelected, ignore_index=True)
-    print(filename, len(featureDataSelected))
+    #print(filename, len(featureDataSelected))
     i += 1
 
 
 # Calculate PCA
-print(len(featureDataSelectedArr))
+#print(len(featureDataSelectedArr))
 pca = PCA(n_components=1)
 pca.fit(featureDataSelectedArr)
 featureDataSelectedArr['HI'] = pca.transform(featureDataSelectedArr)
@@ -84,6 +86,9 @@ featureDataSelectedArr.to_csv('predicteddata.csv')
 predictedData = featureDataSelectedArr
 predictedDataEWM = featureDataSelectedArrEWM
 
+
+
+sys.exit()
 
 
 ##### Data Plotting #####

@@ -10,7 +10,6 @@ import sys
 import random
 import traceback
 import os
-from numpy.linalg import eig
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 from keras.models import load_model
@@ -400,28 +399,22 @@ cd = cd[cd['pwm'] != 0]
 realSelected = cd[['rms1yr', 'kurt1yr', 'skew1yr', 'crest1yr']]
 predSelected = cd[['rms1yp', 'kurt1yp', 'skew1yp', 'crest1yp']]
 
+realSelectedNorm = pd.DataFrame()
+realSelectedNorm['rms1yr'] = realSelected['rms1yr'] / cd['pwm']
+realSelectedNorm['kurt1yr'] = realSelected['kurt1yr'] / cd['pwm']
+realSelectedNorm['skew1yr'] = realSelected['skew1yr'] / cd['pwm']
+realSelectedNorm['crest1yr'] = realSelected['crest1yr'] / cd['pwm']
+
+predSelectedNorm = pd.DataFrame()
+predSelectedNorm['rms1yp'] = predSelected['rms1yp'] / cd['pwm']
+predSelectedNorm['kurt1yp'] = predSelected['kurt1yp'] / cd['pwm']
+predSelectedNorm['skew1yp'] = predSelected['skew1yp'] / cd['pwm']
+predSelectedNorm['crest1yp'] = predSelected['crest1yp'] / cd['pwm']
+
 # PCA (real)
 realPca = PCA(n_components=1)
-realPca.fit(realSelected)
-print('cov')
-cov = realPca.get_covariance()
-print(cov)
-values, vectors = eig(cov)
-print('eigenvalues')
-print(values)
-print('eigenvector')
-print(vectors)
-print('score')
-print(realPca.score(realSelected))
-print('score samples')
-print(realPca.score_samples(realSelected))
-print('components')
-print(realPca.components_)
-print('exp var')
-realPca.n_components = 4
-print(realPca.explained_variance_ratio_)
-sys.exit()
-cd['rHI'] = realPca.transform(realSelected)
+realPca.fit(realSelectedNorm)
+cd['rHI'] = realPca.transform(realSelectedNorm)
 cd['rHIs'] = cd[['rHI']].ewm(alpha=0.01).mean()['rHI']
 
 # Scaler (real)
@@ -432,8 +425,8 @@ cd['rHIss'] = realScaler.transform(cd['rHIs'].to_numpy().reshape(-1,1))
 
 # PCA (pred)
 predPca = PCA(n_components=1)
-predPca.fit(predSelected)
-cd['pHI'] = predPca.transform(predSelected)
+predPca.fit(predSelectedNorm)
+cd['pHI'] = predPca.transform(predSelectedNorm)
 cd['pHIs'] = cd[['pHI']].ewm(alpha=0.01).mean()['pHI']
 
 # Scaler (pred)
@@ -441,22 +434,9 @@ predScaler = MinMaxScaler()
 predScaler.fit(cd['pHIs'].to_numpy().reshape(-1,1))
 cd['pHIss'] = predScaler.transform(cd['pHIs'].to_numpy().reshape(-1,1))
 
-# Manual scaler
-def rescale(x):
-    return (x+5)*100/15
 
-cd['pHIsm'] = cd[['pHIs']].applymap(rescale)
-cd['rHIsm'] = cd[['rHIs']].applymap(rescale)
-
-
-plt.plot(cd['pHIsm'], 'k-')
-plt.plot(cd['rHIsm'], 'r-')
-plt.ylim(0,100)
-
-plt.plot(cd['loadNum']*10, 'g-')
-plt.xlabel('Waktu (s)', fontsize=22)
-plt.ylabel('Indikator Kesehatan (%)', fontsize=22)
-plt.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=18)
+plt.plot(cd['pHIs'], 'k-')
+plt.plot(cd['rHIs'], 'r-')
 plt.grid(True)
 plt.show()
 

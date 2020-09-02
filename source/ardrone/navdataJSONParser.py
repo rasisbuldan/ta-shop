@@ -92,4 +92,4 @@ def getJSONArray(filename):
 if __name__ == '__main__':
     flightDataRaw = getJSONArray('D:/Cloud/Google Drive/Tugas Akhir/data/flight-data/jul_28/to_db/flight_new_1595914928926_hover_spin.json')
     print('Flight data recorded {} steps'.format(len(flightDataRaw)))
-    print(json.dumps(flightDataRaw[0]['droneState'], indent=2))
+    print(json.dumps(flightDataRaw[0], indent=2))

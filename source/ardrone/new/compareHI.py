@@ -1,4 +1,4 @@
-from navdataVibProc import NavData, VibData, NavdataVib
+from flightdataProc import FlightData
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -10,7 +10,6 @@ import sys
 import random
 import traceback
 import os
-from numpy.linalg import eig
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 from keras.models import load_model
@@ -20,27 +19,9 @@ from keras.models import load_model
 #############################
 
 fileName = 'seq_agg_pred_1k1s_aug14'
-modelPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21'
-dumpPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/dumps/seq_agg_load_pred'
-dataPath = 'D:/Cloud/Google Drive/Tugas Akhir/data/cache/Aug21/'
-modelFilename = [
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_24_23_250_aug9_0_aug7_2_jul29_2.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_34_20_250_aug10_1.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_39_16_250_aug10_2.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_40_33_250_aug10_3.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_43_05_250_aug11_4.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_46_51_250_aug11_5.h5',
-    'lstm_navdatavib_model_multidenseoutfilter_aug20_20_08_26_09_49_23_250_aug11_6.h5'
-]
-datasetFilename = [
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug9_0',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug10_1',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug10_2',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug10_3',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug11_4',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug11_5',
-    'lstm_navdatavib_dataset_agg_aug21_multioutfilter_250_aug11_6'
-]
+cachePath = 'D:/cache_new'
+modelFilename = 'D:/cache_new/vm_model_20_09_02_14_19_15.h5_250_aug9_0_aug10_1_aug10_2_aug10_3_aug11_4_aug11_5_aug11_6.h5'
+datasetFilename = 'D:/cache_new/vm_dataset_250_aug9_0_aug10_1_aug10_2_aug10_3_aug11_4_aug11_5_aug11_6.npy'
 
 numOfStep = 6
 timeWindow = 1000   # ms
@@ -148,23 +129,13 @@ plotVibAxis = ['x', 'y', 'z']
 ########## File Traversal & Aggregation ###########
 ###################################################
 
-NV = NavdataVib()
+FD = FlightData()
 
-
-def getDirectoryList(data_dir):
-    '''
-        Get list of file in directory
-    '''
-    return [f for f in os.listdir(data_dir) if '.npy' in f]
-
-
-combinedDatasetArr = []
-for i in range(7):
-    # Load dataset from file
-    print('[o] Loading dataset from', datasetFilename[i] + str('.npy'), end='\r')
-    combinedDataset = list(np.load(dataPath + datasetFilename[i] + str('.npy'), allow_pickle=True))
-    print('[v] Loaded dataset from', datasetFilename[i])
-    combinedDatasetArr.append(combinedDataset)
+# Load dataset from file
+print('[o] Loading dataset from', datasetFilename[i] + str('.npy'), end='\r')
+combinedDataset = list(np.load(cachePath + '/' + datasetFilename, allow_pickle=True))
+print('[v] Loaded dataset from', datasetFilename[i])
+combinedDatasetArr.append(combinedDataset)
 
 
 
@@ -403,23 +374,7 @@ predSelected = cd[['rms1yp', 'kurt1yp', 'skew1yp', 'crest1yp']]
 # PCA (real)
 realPca = PCA(n_components=1)
 realPca.fit(realSelected)
-print('cov')
-cov = realPca.get_covariance()
-print(cov)
-values, vectors = eig(cov)
-print('eigenvalues')
-print(values)
-print('eigenvector')
-print(vectors)
-print('score')
-print(realPca.score(realSelected))
-print('score samples')
-print(realPca.score_samples(realSelected))
-print('components')
-print(realPca.components_)
-print('exp var')
-realPca.n_components = 4
-print(realPca.explained_variance_ratio_)
+print(realPca.get_covariance())
 sys.exit()
 cd['rHI'] = realPca.transform(realSelected)
 cd['rHIs'] = cd[['rHI']].ewm(alpha=0.01).mean()['rHI']
