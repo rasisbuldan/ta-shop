@@ -93,7 +93,7 @@ class FlightData:
         return docs
 
     
-    def aggregate(self, flight_data, time_window):
+    def aggregate(self, flight_data, time_window, load_num=None):
         '''
             Compatible input data feed: NavdataVib.combineDataMultiFeature
             ---------------
@@ -115,14 +115,13 @@ class FlightData:
                 {
                     timestamp,
                     orientation: [roll,pitch,yaw],
-                    mot1: {
-                        'pwm',
-                        'rms': [x,y,z],
-                        'kurtosis': [x,y,z],
-                        'skewness': [x,y,z],
-                        'crest-factor': [x,y,z],
-                        'peak-to-peak': [x,y,z],
-                    }
+                    'loadNum': 0,
+                    'pwm': 0,
+                    'rms': [x,y,z],
+                    'kurtosis': [x,y,z],
+                    'skewness': [x,y,z],
+                    'crest-factor': [x,y,z],
+                    'peak-to-peak': [x,y,z],
                 }
         '''
 
@@ -165,7 +164,6 @@ class FlightData:
                 # Empty dictionary format
                 aggData = {
                     'timestamp': timeCursor,
-                    'loadNum': 0,
                     'pwm': 0,
                     'orientation': [0,0,0],
                     'rms': [0,0,0],
@@ -176,7 +174,8 @@ class FlightData:
                 }
 
                 # Calculate feature aggregation
-                aggData['loadNum'] = np.mean([data['loadNum'] for data in aggBuf])
+                if load_num != None:
+                    aggData['loadNum'] = np.mean([data['loadNum'] for data in aggBuf])
                 aggData['pwm'] = np.mean([data['pwm'][0] for data in aggBuf])
                 aggData['orientation'] = [np.mean([data['orientation'][axis] for data in aggBuf]) for axis in range(3)]
                 aggData['rms'] = [rms([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
@@ -191,6 +190,136 @@ class FlightData:
                 # Reset buffer
                 aggBuf = []
 
+            # Add to buffer
+            else:
+                aggBuf.append(flightData[cursorIdx])
+
+            cursorIdx += 1
+
+        return aggDataArray
+
+    
+    def aggregateMulti(self, flight_data, time_window, load_num=None):
+        '''
+            Compatible input data feed: NavdataVib.combineDataMultiFeature
+            ---------------
+            Input format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    pwm: [mot1,mot2,mot3,mot4],
+                    orientation: [roll,pitch,yaw],
+                    mpu1: [x,y,z],
+                    mpu2: [x,y,z],
+                }
+
+            ---------------
+            Return format:
+            ---------------
+            list of dict
+                {
+                    timestamp,
+                    orientation: [roll,pitch,yaw],
+                    'loadNum': 0,
+                    mot1: {
+                        'pwm': 0,
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                    mot2: {
+                        'pwm': 0,
+                        'rms': [x,y,z],
+                        'kurtosis': [x,y,z],
+                        'skewness': [x,y,z],
+                        'crest-factor': [x,y,z],
+                        'peak-to-peak': [x,y,z],
+                    },
+                }
+        '''
+
+        # Feature calculation by *array* of values
+        def rms(array):
+            return np.sqrt(np.mean(np.square(array)))
+        
+        def kurtosis(array):
+            return scipy.stats.kurtosis(array)
+
+        def skewness(array):
+            return scipy.stats.skew(array)
+
+        def crest_factor(array):
+            return (max(array)/rms(array))
+
+        def peak_to_peak(array):
+            return (max(array) - min(array))
+
+
+        flightData = flight_data.copy()
+
+        # Loop over timestamp and aggregate if buffer time exceed time window
+        timePrev = flightData[0]['timestamp']
+        cursorIdx = 0
+
+        # Aggregate buffer to store combined data point
+        aggBuf = []
+        aggDataArray = []
+
+        while cursorIdx < len(flightData):
+            # Calculate time delta
+            timeCursor = flightData[cursorIdx]['timestamp']
+            
+            # Calculate feature
+            if (timeCursor - timePrev) >= time_window:
+
+                aggBuf.append(flightData[cursorIdx])
+
+                # Empty dictionary format
+                aggData = {
+                    'timestamp': timeCursor,
+                    'pwm': 0,
+                    'orientation': [0,0,0],
+                    'mot1': {
+                        'rms': [0,0,0],
+                        'kurtosis': [0,0,0],
+                        'skewness': [0,0,0],
+                        'crest-factor': [0,0,0],
+                        'peak-to-peak': [0,0,0]
+                    },
+                    'mot2': {
+                        'rms': [0,0,0],
+                        'kurtosis': [0,0,0],
+                        'skewness': [0,0,0],
+                        'crest-factor': [0,0,0],
+                        'peak-to-peak': [0,0,0]
+                    }
+                    
+                }
+
+                # Calculate feature aggregation
+                if load_num != None:
+                    aggData['loadNum'] = np.mean([data['loadNum'] for data in aggBuf])
+                aggData['pwm'] = np.mean([data['pwm'][0] for data in aggBuf])
+                aggData['orientation'] = [np.mean([data['orientation'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['rms'] = [rms([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['rms'] = [rms([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['kurtosis'] = [kurtosis([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['kurtosis'] = [kurtosis([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['skewness'] = [skewness([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['skewness'] = [skewness([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['crest-factor'] = [crest_factor([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['crest-factor'] = [crest_factor([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot1']['peak-to-peak'] = [peak_to_peak([data['mpu1'][axis] for data in aggBuf]) for axis in range(3)]
+                aggData['mot2']['peak-to-peak'] = [peak_to_peak([data['mpu2'][axis] for data in aggBuf]) for axis in range(3)]
+
+                aggDataArray.append(aggData)
+                timePrev = timeCursor
+
+                # Reset buffer
+                aggBuf = []
 
             # Add to buffer
             else:
@@ -328,6 +457,77 @@ class FlightData:
 
             plt.savefig('orientation_nt_{}.png'.format(axis))
 
+    def plotAggVib(self, desc, time_window=250, feature='rms', save_dir=None):
+        '''
+            Currently 3 axis, save only
+        '''
+        rawFlightArr = list(self.flightCollection.find({
+            "$and": [
+                {
+                    "description": { "$eq": desc }
+                }
+            ]
+        }))
+
+        aggFlightArr = self.aggregate(rawFlightArr, time_window)
+
+        timestampData = [(af['timestamp']/1000) for af in aggFlightArr]
+
+        axisLabel = ['X','Y','Z']
+
+        for axis in range(3):
+            rawData = [af[feature][axis] for af in aggFlightArr]
+
+            fig = plt.figure(figsize=(16,2.2), dpi=120)
+            fig.subplots_adjust(left=0.07, right=0.97, top=0.93, bottom=0.15)
+
+            ax1 = fig.add_subplot(111, frame_on=True)
+
+            p_test, = ax1.plot(timestampData, rawData, 'k-', linewidth=1.2)
+            ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
+
+            ax1.set_xticks(list(range(0,35,2)))
+            ax1.set_xlim([0,35])
+            
+            """ if data_key == 'pwm':
+                ylim = [0,280]
+                yticks = list(range(ylim[0],ylim[1]+1,50))
+                ylabel = 'PWM' """
+
+            if feature == 'rms':
+                ylim = [0,20]
+                yticks = list(range(ylim[0],ylim[1]+1,5))
+                ylabel = 'RMS'
+            
+            if feature == 'kurtosis':
+                ylim = [-10,30]
+                yticks = list(range(ylim[0],ylim[1]+1,10))
+                ylabel = 'Kurtosis'
+
+            if feature == 'skewness':
+                ylim = [-10,10]
+                yticks = list(range(ylim[0],ylim[1]+1,5))
+                ylabel = 'Skewness'
+
+            if feature == 'crest-factor':
+                ylim = [-5,10]
+                yticks = list(range(ylim[0],ylim[1]+1,5))
+                ylabel = 'Crest Factor'
+
+            if feature == 'peak-to-peak':
+                ylim = [0,40]
+                yticks = list(range(ylim[0],ylim[1]+1,10))
+                ylabel = 'Peak-to-Peak'
+
+            ax1.set_yticks(yticks)
+            ax1.set_ylim(ylim)
+
+            ax1.set_ylabel('{} ({})'.format(ylabel, axisLabel[axis]), fontsize=16)
+
+            ax1.grid(True)
+
+            plt.savefig('vib_agg_{}_{}.png'.format(axis, feature))
+
 
 ##################
 ##### Driver #####
@@ -362,7 +562,7 @@ if __name__ == '__main__':
     
     print('Total number of documents: {} in {} attempts in {:.2f}s'.format(totalNumOfDocs, totalNumOfDesc, totalFlightTime/1000)) """
 
-    FD.plotRawVib(
+    """ FD.plotRawVib(
         desc='aug9_0_hover30s_5.json'
     )
 
@@ -372,4 +572,10 @@ if __name__ == '__main__':
 
     FD.plotRawOrientation(
         desc='aug9_0_hover30s_5.json'
-    )
+    ) """
+
+    for feat in ['rms','kurtosis','skewness','crest-factor','peak-to-peak']:
+        FD.plotAggVib(
+            desc='aug9_0_hover30s_5.json',
+            feature=feat
+        )
