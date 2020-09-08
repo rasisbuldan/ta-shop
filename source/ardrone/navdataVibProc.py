@@ -2277,7 +2277,7 @@ class NavdataVib:
         plt.rcParams["font.family"] = "Times New Roman"
 
         # Get timestamp array
-        xData = [(data['timestamp'] - combined_agg[0]['timestamp']) for data in combined_agg]
+        xData = [(data['timestamp'] - combined_agg[0]['timestamp'])/1000 for data in combined_agg]
         
         # Get feature data array
         if data_key == 'pwm':
@@ -2305,7 +2305,7 @@ class NavdataVib:
 
         # Set x-axis limit and ticks
         xlim = [0, xData[-1]]
-        xticks = list(range(0, (((xData[-1] // 1000) + 1) * 1000) + 1, 5000))
+        xticks = list(range(5,41,5))
 
         # Set y-axis limit and ticks
         if data_key == 'pwm':
@@ -2362,7 +2362,7 @@ class NavdataVib:
         ax1.set_yticks(yticks)
         ax1.set_ylim(ylim)
         ax1.grid(True)
-        ax1.set_xlabel('Waktu (ms)', fontsize=22)
+        ax1.set_xlabel('Waktu (s)', fontsize=22)
         ax1.set_ylabel(ylabel, fontsize=22)
 
         p2, = ax2.plot(xData, yData2, 'r-', linewidth=1.5)
@@ -2762,7 +2762,7 @@ if __name__ == '__main__':
 
         feedDataset.append(feedData)
 
-    NV.plotAggregateCombinedLoadDiff(
+    NV.plotAggregateCombinedMotDiff(
         dataset=feedDataset,
         data_key='pwm',
         idx=0,
@@ -2772,7 +2772,7 @@ if __name__ == '__main__':
 
     for dataKey in ['rms','kurtosis','skewness','crest-factor','peak-to-peak']:
         for idx in range(3):
-            NV.plotAggregateCombinedLoadDiff(
+            NV.plotAggregateCombinedMotDiff(
                 dataset=feedDataset,
                 data_key=dataKey,
                 idx=idx,

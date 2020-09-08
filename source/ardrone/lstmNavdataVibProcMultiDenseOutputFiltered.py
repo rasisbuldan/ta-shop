@@ -26,7 +26,7 @@ import pickle
 
 # Dataset Preparation
 nTest = 3
-timeWindow =  200    # in ms
+timeWindow =  1000    # in ms
 
 
 featureName = [
@@ -49,7 +49,7 @@ featureName = [
 
 
 # LSTM
-nSequence = 20
+nSequence = 2
 nFeatureInput = 4   # pwm1, pitch, roll, yaw
 nFeatureOutput = 15  # rms.x, rms.y, rms.z
 epochNum = 500
@@ -70,7 +70,7 @@ discardDesc = [
     'aug9_hover30s_calib0.json',
     'aug9_3_hover10s.json'
 ]
-filterDesc = ['aug9_0'] # jul_29
+filterDesc = ['aug11_4'] # jul_29
 
 
 ### Dataset split ###
@@ -88,7 +88,7 @@ testDatasetDesc = []
 ###################################################
 
 # Program flow
-useCachedDataset = True
+useCachedDataset = False
 useCachedModel = False
 train = True
 predict = True
@@ -456,7 +456,7 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
     ax1 = fig.add_subplot(111, frame_on=True)
     ax2 = fig.add_subplot(111, frame_on=False)
 
-    p_test, = ax1.plot(xData, output_arr, 'r--', linewidth=0.8)
+    p_test, = ax1.plot(xData, output_arr, 'r--', linewidth=1.8)
     ax1.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=16)
 
     ax1.set_xticks(xticks)
@@ -469,7 +469,7 @@ def plotPrediction(timestamp_arr, output_arr, pred_arr, idx, simple=False):
         ax1.set_xlabel('Waktu (ms)', fontsize=20)
     ax1.set_ylabel(featureName[idx].title(), fontsize=20)
 
-    p_pred, = ax2.plot(xData, pred_arr, 'k-', linewidth=1)
+    p_pred, = ax2.plot(xData, pred_arr, 'k-', linewidth=2)
     ax2.set_xticks([])
     ax2.set_xlim(xlim)
     ax2.set_yticks([])

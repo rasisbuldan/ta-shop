@@ -395,7 +395,7 @@ cd = pd.DataFrame(
 )
 
 # Add HI value
-cd = cd.iloc[100:]
+cd = cd.iloc[1:]
 cd = cd[cd['pwm'] != 0]
 realSelected = cd[['rms1yr', 'kurt1yr', 'skew1yr', 'crest1yr']]
 predSelected = cd[['rms1yp', 'kurt1yp', 'skew1yp', 'crest1yp']]
@@ -420,7 +420,6 @@ print(realPca.components_)
 print('exp var')
 realPca.n_components = 4
 print(realPca.explained_variance_ratio_)
-sys.exit()
 cd['rHI'] = realPca.transform(realSelected)
 cd['rHIs'] = cd[['rHI']].ewm(alpha=0.01).mean()['rHI']
 
@@ -428,7 +427,8 @@ cd['rHIs'] = cd[['rHI']].ewm(alpha=0.01).mean()['rHI']
 realScaler = MinMaxScaler()
 realScaler.fit(cd['rHIs'].to_numpy().reshape(-1,1))
 cd['rHIss'] = realScaler.transform(cd['rHIs'].to_numpy().reshape(-1,1))
-
+minReal = min(cd['rHIs'])
+maxReal = max(cd['rHIs'])
 
 # PCA (pred)
 predPca = PCA(n_components=1)
@@ -440,24 +440,37 @@ cd['pHIs'] = cd[['pHI']].ewm(alpha=0.01).mean()['pHI']
 predScaler = MinMaxScaler()
 predScaler.fit(cd['pHIs'].to_numpy().reshape(-1,1))
 cd['pHIss'] = predScaler.transform(cd['pHIs'].to_numpy().reshape(-1,1))
+minPred = min(cd['pHIs'])
+maxPred = max(cd['pHIs'])
+
+minScale = min(minReal, minPred)
+maxScale = max(maxReal, maxPred)
 
 # Manual scaler
 def rescale(x):
-    return (x+5)*100/15
+    return (x-minScale)*1/(maxScale-minScale)
 
 cd['pHIsm'] = cd[['pHIs']].applymap(rescale)
 cd['rHIsm'] = cd[['rHIs']].applymap(rescale)
 
 
-plt.plot(cd['pHIsm'], 'k-')
-plt.plot(cd['rHIsm'], 'r-')
-plt.ylim(0,100)
+p1, = plt.plot(cd['pHIsm'], 'k-')
+p2, = plt.plot(cd['rHIsm'], 'r-')
+plt.ylim(0,1)
+plt.yticks([0,0.2,0.4,0.6,0.8,1])
 
-plt.plot(cd['loadNum']*10, 'g-')
-plt.xlabel('Waktu (s)', fontsize=22)
-plt.ylabel('Indikator Kesehatan (%)', fontsize=22)
+#plt.plot(cd['loadNum']*10, 'g-')
+plt.xlabel('Detik (s)', fontsize=22)
+plt.title('Nilai Indikator Kesehatan (HI)', fontsize=22)
 plt.tick_params(grid_alpha=0.6, grid_linewidth=0.4, labelsize=18)
 plt.grid(True)
+plt.legend(
+    (p1,p2),
+    ('Model estimasi vibrasi', 'Nilai vibrasi asli'),
+    fontsize=16,
+    loc='upper left'
+)
+
 plt.show()
 
-#cd.to_csv('comparedataHI2.csv')
+cd.to_csv('comparedataHIRescale.csv')
